@@ -476,32 +476,20 @@ export function getHelpButtons() {
         new Discord.ActionRowBuilder().addComponents(
             getButton({
                 style: Discord.ButtonStyle.Link,
-                label: 'ORIGINAL DEVELOPER',
-                url: 'https://github.com/alexemanuelol',
-            }),
-            getButton({
-                style: Discord.ButtonStyle.Link,
-                label: 'FORK DEVELOPER',
-                url: 'https://github.com/faithix',
-            }),
-            getButton({
-                style: Discord.ButtonStyle.Link,
                 label: 'REPOSITORY',
-                url: 'https://github.com/rust-sense/bot',
-            }),
-        ),
-        new Discord.ActionRowBuilder().addComponents(
-            getButton({
-                style: Discord.ButtonStyle.Link,
-                label: 'DOCUMENTATION',
-                url: 'https://github.com/rust-sense/bot/blob/develop/docs/documentation.md',
+                url: 'https://github.com/rust-sense/rust-sense-bot',
             }),
             getButton({
                 style: Discord.ButtonStyle.Link,
-                label: 'CREDENTIALS',
-                url: 'https://rust-sense-credentials.netlify.app/',
+                label: 'ISSUE TRACKER',
+                url: 'https://github.com/rust-sense/rust-sense-bot/issues',
             }),
-        ),
+            getButton({
+                style: Discord.ButtonStyle.Link,
+                label: 'EXTENSION',
+                url: 'https://chromewebstore.google.com/detail/rust-companion-authentica/idihpaljmebenfolkfibmdpefgcgcddd',
+            }),
+        )
     ];
 }
 
