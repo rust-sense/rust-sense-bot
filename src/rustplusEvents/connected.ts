@@ -1,5 +1,5 @@
 import * as DiscordMessages from '../discordTools/discordMessages.js';
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 import * as PollingHandlerModule from '../services/pollingService.js';
 
 const PollingHandler = PollingHandlerModule;
@@ -11,7 +11,7 @@ export default {
 
         rustplus.log(client.intlGet(null, 'connectedCap'), client.intlGet(null, 'connectedToServer'));
 
-        const instance = await getPersistenceCache().readGuildState(rustplus.guildId);
+        const instance = await getPersistenceService().readGuildState(rustplus.guildId);
         const guildId = rustplus.guildId;
         const serverId = rustplus.serverId;
 
@@ -30,7 +30,7 @@ export default {
             );
 
             instance.activeServer = null;
-            await getPersistenceCache().updateGuildCoreFields(guildId, { activeServer: null });
+            await getPersistenceService().updateGuildCoreFields(guildId, { activeServer: null });
 
             await DiscordMessages.sendServerConnectionInvalidMessage(guildId, serverId);
             await DiscordMessages.sendServerMessage(guildId, serverId, null);

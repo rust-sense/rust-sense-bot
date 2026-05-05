@@ -1,6 +1,6 @@
 import * as DiscordMessages from '../discordTools/discordMessages.js';
 import * as Constants from '../domain/constants.js';
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 import * as TeamHandler from '../services/teamService.js';
 
 export default {
@@ -39,7 +39,7 @@ async function messageBroadcastTeamChanged(rustplus: any, client: any, message: 
 }
 
 async function messageBroadcastTeamMessage(rustplus: any, client: any, message: any) {
-    const instance = await getPersistenceCache().readGuildState(rustplus.guildId);
+    const instance = await getPersistenceService().readGuildState(rustplus.guildId);
     const steamId = message.broadcast.teamMessage.message.steamId.toString();
 
     if (steamId === rustplus.playerId) {
@@ -107,7 +107,7 @@ async function messageBroadcastTeamMessage(rustplus: any, client: any, message: 
 }
 
 async function messageBroadcastEntityChanged(rustplus: any, client: any, message: any) {
-    const instance = await getPersistenceCache().readGuildState(rustplus.guildId);
+    const instance = await getPersistenceService().readGuildState(rustplus.guildId);
     const entityId = message.broadcast.entityChanged.entityId;
 
     if (Object.hasOwn(instance.serverList[rustplus.serverId].switches, entityId)) {
@@ -123,7 +123,7 @@ function messageBroadcastCameraRays(rustplus: any, client: any, message: any) {
 }
 
 async function messageBroadcastEntityChangedSmartSwitch(rustplus: any, client: any, message: any) {
-    const instance = await getPersistenceCache().readGuildState(rustplus.guildId);
+    const instance = await getPersistenceService().readGuildState(rustplus.guildId);
     const serverId = rustplus.serverId;
     const entityId = message.broadcast.entityChanged.entityId;
     const server = instance.serverList[serverId];
@@ -142,7 +142,7 @@ async function messageBroadcastEntityChangedSmartSwitch(rustplus: any, client: a
 
     const active = message.broadcast.entityChanged.payload.value;
     server.switches[entityId].active = active;
-    await getPersistenceCache().updateSmartSwitchFields(rustplus.guildId, serverId, entityId, { active });
+    await getPersistenceService().updateSmartSwitchFields(rustplus.guildId, serverId, entityId, { active });
 
     await DiscordMessages.sendSmartSwitchMessage(rustplus.guildId, serverId, entityId);
     const SmartSwitchGroupHandler = await import('../services/smartSwitchGroupService.js');
@@ -150,7 +150,7 @@ async function messageBroadcastEntityChangedSmartSwitch(rustplus: any, client: a
 }
 
 async function messageBroadcastEntityChangedSmartAlarm(rustplus: any, client: any, message: any) {
-    const instance = await getPersistenceCache().readGuildState(rustplus.guildId);
+    const instance = await getPersistenceService().readGuildState(rustplus.guildId);
     const serverId = rustplus.serverId;
     const entityId = message.broadcast.entityChanged.entityId;
     const server = instance.serverList[serverId];
@@ -160,14 +160,14 @@ async function messageBroadcastEntityChangedSmartAlarm(rustplus: any, client: an
     const active = message.broadcast.entityChanged.payload.value;
     server.alarms[entityId].active = active;
     server.alarms[entityId].reachable = true;
-    await getPersistenceCache().updateSmartAlarmFields(rustplus.guildId, serverId, entityId, {
+    await getPersistenceService().updateSmartAlarmFields(rustplus.guildId, serverId, entityId, {
         active,
         reachable: true,
     });
 
     if (active) {
         server.alarms[entityId].lastTrigger = Math.floor(Date.now() / 1000);
-        await getPersistenceCache().updateSmartAlarmFields(rustplus.guildId, serverId, entityId, {
+        await getPersistenceService().updateSmartAlarmFields(rustplus.guildId, serverId, entityId, {
             lastTrigger: server.alarms[entityId].lastTrigger,
         });
         await DiscordMessages.sendSmartAlarmTriggerMessage(rustplus.guildId, serverId, entityId);
@@ -181,7 +181,7 @@ async function messageBroadcastEntityChangedSmartAlarm(rustplus: any, client: an
 }
 
 async function messageBroadcastEntityChangedStorageMonitor(rustplus: any, client: any, message: any) {
-    const instance = await getPersistenceCache().readGuildState(rustplus.guildId);
+    const instance = await getPersistenceService().readGuildState(rustplus.guildId);
     const serverId = rustplus.serverId;
     const entityId = message.broadcast.entityChanged.entityId;
     const server = instance.serverList[serverId];
@@ -213,7 +213,7 @@ async function messageBroadcastEntityChangedStorageMonitor(rustplus: any, client
                 server.storageMonitors[entityId].type = 'largeWoodBox';
             }
         }
-        await getPersistenceCache().updateStorageMonitorFields(rustplus.guildId, serverId, entityId, {
+        await getPersistenceService().updateStorageMonitorFields(rustplus.guildId, serverId, entityId, {
             reachable: server.storageMonitors[entityId].reachable,
             type: server.storageMonitors[entityId].type,
         });
@@ -223,13 +223,13 @@ async function messageBroadcastEntityChangedStorageMonitor(rustplus: any, client
 }
 
 async function updateToolCupboard(rustplus: any, client: any, message: any) {
-    const instance = await getPersistenceCache().readGuildState(rustplus.guildId);
+    const instance = await getPersistenceService().readGuildState(rustplus.guildId);
     const server = instance.serverList[rustplus.serverId];
     const entityId = message.broadcast.entityChanged.entityId;
 
     const info = await rustplus.getEntityInfoAsync(entityId);
     server.storageMonitors[entityId].reachable = rustplus.isResponseValid(info) ? true : false;
-    await getPersistenceCache().updateStorageMonitorFields(rustplus.guildId, rustplus.serverId, entityId, {
+    await getPersistenceService().updateStorageMonitorFields(rustplus.guildId, rustplus.serverId, entityId, {
         reachable: server.storageMonitors[entityId].reachable,
     });
 
@@ -258,7 +258,7 @@ async function updateToolCupboard(rustplus: any, client: any, message: any) {
         } else if (info.entityInfo.payload.protectionExpiry !== 0) {
             server.storageMonitors[entityId].decaying = false;
         }
-        await getPersistenceCache().updateStorageMonitorFields(rustplus.guildId, rustplus.serverId, entityId, {
+        await getPersistenceService().updateStorageMonitorFields(rustplus.guildId, rustplus.serverId, entityId, {
             decaying: server.storageMonitors[entityId].decaying,
             type: server.storageMonitors[entityId].type,
         });

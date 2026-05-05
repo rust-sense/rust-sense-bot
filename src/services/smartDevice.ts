@@ -1,9 +1,9 @@
 import { client } from '../index.js';
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 
 export async function getSmartDevice(guildId: string, entityId: string) {
     /* Temporary function till discord modals gets more functional */
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
 
     for (const serverId in instance.serverList) {
         for (const switchId in instance.serverList[serverId].switches) {

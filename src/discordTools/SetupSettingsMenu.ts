@@ -1,6 +1,6 @@
 import * as Discord from 'discord.js';
 import * as Constants from '../domain/constants.js';
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 import type DiscordBot from '../structures/DiscordBot.js';
 import { cwdPath } from '../utils/filesystemUtils.js';
 import * as DiscordButtons from './discordButtons.js';
@@ -9,7 +9,7 @@ import * as DiscordSelectMenus from './discordSelectMenus.js';
 import * as DiscordTools from './discordTools.js';
 
 export default async (client: DiscordBot, guild: any, forced: boolean = false) => {
-    const instance = await getPersistenceCache().readGuildState(guild.id);
+    const instance = await getPersistenceService().readGuildState(guild.id);
     const channel = DiscordTools.getTextChannelById(guild.id, instance.channelId.settings);
 
     if (!channel) {
@@ -28,12 +28,12 @@ export default async (client: DiscordBot, guild: any, forced: boolean = false) =
         await setupNotificationSettings(client, guild.id, channel);
 
         instance.firstTime = false;
-        await getPersistenceCache().markFirstTimeComplete(guild.id);
+        await getPersistenceService().markFirstTimeComplete(guild.id);
     }
 };
 
 async function setupGeneralSettings(client: DiscordBot, guildId: string, channel: any) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
 
     await client.messageSend(channel, {
         files: [
@@ -307,7 +307,7 @@ async function setupGeneralSettings(client: DiscordBot, guildId: string, channel
 }
 
 async function setupNotificationSettings(client: DiscordBot, guildId: string, channel: any) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
 
     await client.messageSend(channel, {
         files: [

@@ -2,7 +2,7 @@ import * as Discord from 'discord.js';
 import * as Constants from '../domain/constants.js';
 import { secondsToFullScale } from '../domain/timer.js';
 import { client } from '../index.js';
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 import { getServerRustMapsUrl, serverIdToConnectString } from '../utils/serverUtils.js';
 import * as Utils from './discordFormattingUtils.js';
 import * as DiscordTools from './discordTools.js';
@@ -33,7 +33,7 @@ export function getEmbed(options: any = {}) {
 }
 
 export async function getSmartSwitchEmbed(guildId, serverId, entityId) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const entity = instance.serverList[serverId].switches[entityId];
     const grid = Utils.getGridSuffix(entity.location);
 
@@ -55,8 +55,8 @@ export async function getSmartSwitchEmbed(guildId, serverId, entityId) {
 }
 
 export async function getServerEmbed(guildId, serverId) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
-    const credentials = await getPersistenceCache().getCredentials(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
+    const credentials = await getPersistenceService().getCredentials(guildId);
     const server = instance.serverList[serverId];
     let hoster: any = client.intlGet(guildId, 'unknown');
     if (Object.hasOwn(credentials, server.steamId)) {
@@ -105,7 +105,7 @@ export async function getServerEmbed(guildId, serverId) {
 }
 
 export async function getTrackerEmbed(guildId, trackerId) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const tracker = instance.trackers[trackerId];
     const battlemetricsId = tracker.battlemetricsId;
     const bmInstance = client.battlemetricsInstances[battlemetricsId];
@@ -245,7 +245,7 @@ export async function getTrackerEmbed(guildId, trackerId) {
 }
 
 export async function getSmartAlarmEmbed(guildId, serverId, entityId) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const entity = instance.serverList[serverId].alarms[entityId];
     const grid = Utils.getGridSuffix(entity.location);
     let description = `**ID**: \`${entityId}\`\n`;
@@ -281,7 +281,7 @@ export async function getSmartAlarmEmbed(guildId, serverId, entityId) {
 }
 
 export async function getStorageMonitorEmbed(guildId, serverId, entityId) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const entity = instance.serverList[serverId].storageMonitors[entityId];
     const rustplus = client.rustplusInstances[guildId];
     const grid = Utils.getGridSuffix(entity.location);
@@ -371,7 +371,7 @@ export async function getStorageMonitorEmbed(guildId, serverId, entityId) {
 }
 
 export async function getSmartSwitchGroupEmbed(guildId, serverId, groupId) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const group = instance.serverList[serverId].switchGroups[groupId];
 
     let switchName = '',
@@ -417,7 +417,7 @@ export async function getSmartSwitchGroupEmbed(guildId, serverId, groupId) {
 }
 
 export async function getNotFoundSmartDeviceEmbed(guildId, serverId, entityId, type) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const entity = instance.serverList[serverId][type][entityId];
     const grid = Utils.getGridSuffix(entity.location);
 
@@ -432,7 +432,7 @@ export async function getNotFoundSmartDeviceEmbed(guildId, serverId, entityId, t
 }
 
 export async function getStorageMonitorRecycleEmbed(guildId, serverId, entityId, items) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const entity = instance.serverList[serverId].storageMonitors[entityId];
     const grid = Utils.getGridSuffix(entity.location);
 
@@ -463,7 +463,7 @@ export async function getStorageMonitorRecycleEmbed(guildId, serverId, entityId,
 }
 
 export async function getDecayingNotificationEmbed(guildId, serverId, entityId) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const entity = instance.serverList[serverId].storageMonitors[entityId];
     const grid = Utils.getGridSuffix(entity.location);
 
@@ -480,7 +480,7 @@ export async function getDecayingNotificationEmbed(guildId, serverId, entityId) 
 }
 
 export async function getStorageMonitorDisconnectNotificationEmbed(guildId, serverId, entityId) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const entity = instance.serverList[serverId].storageMonitors[entityId];
     const grid = Utils.getGridSuffix(entity.location);
 
@@ -497,10 +497,10 @@ export async function getStorageMonitorDisconnectNotificationEmbed(guildId, serv
 }
 
 export async function getStorageMonitorNotFoundEmbed(guildId, serverId, entityId) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const server = instance.serverList[serverId];
     const entity = server.storageMonitors[entityId];
-    const credentials = await getPersistenceCache().getCredentials(guildId);
+    const credentials = await getPersistenceService().getCredentials(guildId);
     const user = await DiscordTools.getUserById(guildId, credentials[server.steamId].discord_user_id);
     const grid = Utils.getGridSuffix(entity.location);
 
@@ -518,10 +518,10 @@ export async function getStorageMonitorNotFoundEmbed(guildId, serverId, entityId
 }
 
 export async function getSmartSwitchNotFoundEmbed(guildId, serverId, entityId) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const server = instance.serverList[serverId];
     const entity = instance.serverList[serverId].switches[entityId];
-    const credentials = await getPersistenceCache().getCredentials(guildId);
+    const credentials = await getPersistenceService().getCredentials(guildId);
     const user = await DiscordTools.getUserById(guildId, credentials[server.steamId].discord_user_id);
     const grid = Utils.getGridSuffix(entity.location);
 
@@ -539,10 +539,10 @@ export async function getSmartSwitchNotFoundEmbed(guildId, serverId, entityId) {
 }
 
 export async function getSmartAlarmNotFoundEmbed(guildId, serverId, entityId) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const server = instance.serverList[serverId];
     const entity = server.alarms[entityId];
-    const credentials = await getPersistenceCache().getCredentials(guildId);
+    const credentials = await getPersistenceService().getCredentials(guildId);
     const user = await DiscordTools.getUserById(guildId, credentials[server.steamId].discord_user_id);
     const grid = Utils.getGridSuffix(entity.location);
 
@@ -605,7 +605,7 @@ export function getAlarmRaidAlarmEmbed(data, body) {
 }
 
 export async function getAlarmEmbed(guildId, serverId, entityId) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const entity = instance.serverList[serverId].alarms[entityId];
     const grid = Utils.getGridSuffix(entity.location);
 
@@ -623,7 +623,7 @@ export async function getAlarmEmbed(guildId, serverId, entityId) {
 }
 
 export async function getEventEmbed(guildId, serverId, text, image, color = Constants.COLOR_DEFAULT) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const server = instance.serverList[serverId];
     return getEmbed({
         color: color,
@@ -648,7 +648,7 @@ export function getActionInfoEmbed(color, str, footer = null, ephemeral = true) 
 }
 
 export async function getServerChangedStateEmbed(guildId, serverId, state) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const server = instance.serverList[serverId];
     return getEmbed({
         color: state ? Constants.COLOR_INACTIVE : Constants.COLOR_ACTIVE,
@@ -660,7 +660,7 @@ export async function getServerChangedStateEmbed(guildId, serverId, state) {
 }
 
 export async function getServerWipeDetectedEmbed(guildId, serverId) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const server = instance.serverList[serverId];
     return getEmbed({
         color: Constants.COLOR_DEFAULT,
@@ -672,7 +672,7 @@ export async function getServerWipeDetectedEmbed(guildId, serverId) {
 }
 
 export async function getServerConnectionInvalidEmbed(guildId, serverId) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const server = instance.serverList[serverId];
     return getEmbed({
         color: Constants.COLOR_INACTIVE,
@@ -684,7 +684,7 @@ export async function getServerConnectionInvalidEmbed(guildId, serverId) {
 }
 
 export async function getActivityNotificationEmbed(guildId, serverId, color, text, steamId, png, title = null) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const footerTitle = title !== null ? title : instance.serverList[serverId].title;
     return getEmbed({
         color: color,
@@ -700,7 +700,7 @@ export async function getActivityNotificationEmbed(guildId, serverId, color, tex
 
 export async function getUpdateServerInformationEmbed(rustplus) {
     const guildId = rustplus.guildId;
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
 
     const time = rustplus.getCommandTime(true);
     const timeLeftTitle = client.intlGet(rustplus.guildId, 'timeTill', {
@@ -764,7 +764,7 @@ export async function getUpdateServerInformationEmbed(rustplus) {
 
 export async function getUpdateEventInformationEmbed(rustplus) {
     const guildId = rustplus.guildId;
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
 
     const cargoshipFieldName = client.intlGet(guildId, 'cargoship');
     const patrolHelicopterFieldName = client.intlGet(guildId, 'patrolHelicopter');
@@ -803,7 +803,7 @@ export async function getUpdateEventInformationEmbed(rustplus) {
 
 export async function getUpdateTeamInformationEmbed(rustplus) {
     const guildId = rustplus.guildId;
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
 
     const title = client.intlGet(guildId, 'teamMemberInfo');
     const teamMemberFieldName = client.intlGet(guildId, 'teamMember');
@@ -994,7 +994,7 @@ export function getUpdateBattlemetricsOnlinePlayersInformationEmbed(rustplus, ba
 }
 
 export async function getDiscordCommandResponseEmbed(rustplus, response) {
-    const instance = await getPersistenceCache().readGuildState(rustplus.guildId);
+    const instance = await getPersistenceService().readGuildState(rustplus.guildId);
 
     let string = '';
     if (Array.isArray(response)) {
@@ -1013,7 +1013,7 @@ export async function getDiscordCommandResponseEmbed(rustplus, response) {
 }
 
 export async function getCredentialsShowEmbed(guildId) {
-    const credentials = await getPersistenceCache().getCredentials(guildId);
+    const credentials = await getPersistenceService().getCredentials(guildId);
     let names = '';
     let steamIds = '';
     let hoster = '';
@@ -1043,7 +1043,7 @@ export async function getCredentialsShowEmbed(guildId) {
 }
 
 export async function getItemAvailableVendingMachineEmbed(guildId, serverId, str) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const server = instance.serverList[serverId];
     return getEmbed({
         color: Constants.COLOR_DEFAULT,
@@ -1056,7 +1056,7 @@ export async function getItemAvailableVendingMachineEmbed(guildId, serverId, str
 }
 
 export async function getUserSendEmbed(guildId, serverId, sender, str) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const server = instance.serverList[serverId];
     return getEmbed({
         color: Constants.COLOR_DEFAULT,
@@ -1214,7 +1214,7 @@ export function getRecycleEmbed(guildId, recycleDetails, quantity, recyclerType)
 }
 
 export async function getBattlemetricsEventEmbed(guildId, battlemetricsId, title, description, fields = null) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const bmInstance = client.battlemetricsInstances[battlemetricsId];
 
     const serverId = `${bmInstance.server_ip}-${bmInstance.server_port}`;

@@ -1,7 +1,7 @@
 import * as Discord from 'discord.js';
 import * as Constants from '../domain/constants.js';
 import { client } from '../index.js';
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 
 const SUCCESS = Discord.ButtonStyle.Success;
 const DANGER = Discord.ButtonStyle.Danger;
@@ -23,7 +23,7 @@ export function getButton(options: any = {}) {
 }
 
 export async function getServerButtons(guildId: string, serverId: string, state: number | null = null) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const server: any = instance.serverList[serverId];
     const identifier = JSON.stringify({ serverId: serverId });
 
@@ -119,7 +119,7 @@ export async function getServerButtons(guildId: string, serverId: string, state:
 }
 
 export async function getSmartSwitchButtons(guildId: string, serverId: string, entityId: string) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const entity = instance.serverList[serverId].switches[entityId];
     const identifier = JSON.stringify({ serverId: serverId, entityId: entityId });
 
@@ -184,7 +184,7 @@ export function getSmartSwitchGroupButtons(guildId: string, serverId: string, gr
 }
 
 export async function getSmartAlarmButtons(guildId: string, serverId: string, entityId: string) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const entity = instance.serverList[serverId].alarms[entityId];
     const identifier = JSON.stringify({ serverId: serverId, entityId: entityId });
 
@@ -208,7 +208,7 @@ export async function getSmartAlarmButtons(guildId: string, serverId: string, en
 }
 
 export async function getStorageMonitorToolCupboardButtons(guildId: string, serverId: string, entityId: string) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const entity = instance.serverList[serverId].storageMonitors[entityId];
     const identifier = JSON.stringify({ serverId: serverId, entityId: entityId });
 
@@ -307,7 +307,7 @@ export function getInGameCommandsEnabledButton(guildId: string, enabled: boolean
 }
 
 export async function getInGameTeammateNotificationsButtons(guildId: string) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
 
     return new Discord.ActionRowBuilder().addComponents(
         getButton({
@@ -384,7 +384,7 @@ export function getLeaderCommandOnlyForPairedButton(guildId: string, enabled: bo
 }
 
 export async function getTrackerButtons(guildId: string, trackerId: string) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const tracker: any = instance.trackers[trackerId];
     const identifier = JSON.stringify({ trackerId: trackerId });
 
@@ -516,7 +516,7 @@ export function getDisplayInformationBattlemetricsAllOnlinePlayersButton(guildId
 }
 
 export async function getSubscribeToChangesBattlemetricsButtons(guildId: string) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
 
     return [
         new Discord.ActionRowBuilder().addComponents(

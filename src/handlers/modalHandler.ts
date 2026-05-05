@@ -7,10 +7,10 @@ import * as Keywords from '../services/keywordsService.js';
 import * as Scrape from '../infrastructure/scrape.js';
 import * as TrackerInputParser from '../domain/trackerInputParser.js';
 import * as Utils from '../discordTools/discordInteractionUtils.js';
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 
 export default async (client: DiscordBot, interaction: any) => {
-    const instance = await getPersistenceCache().readGuildState(interaction.guildId);
+    const instance = await getPersistenceService().readGuildState(interaction.guildId);
     const guildId = interaction.guildId;
 
     const verifyId = Utils.generateVerifyId().toString();
@@ -51,7 +51,7 @@ export default async (client: DiscordBot, interaction: any) => {
         if (deepSeaWipeDuration && deepSeaWipeDuration * 1000 !== server.deepSeaWipeDurationMs) {
             server.deepSeaWipeDurationMs = deepSeaWipeDuration * 1000;
         }
-        await getPersistenceCache().updateServerFields(guildId, ids.serverId, {
+        await getPersistenceService().updateServerFields(guildId, ids.serverId, {
             cargoShipEgressTimeMs: server.cargoShipEgressTimeMs,
             oilRigLockedCrateUnlockTimeMs: server.oilRigLockedCrateUnlockTimeMs,
             deepSeaMinWipeCooldownMs: server.deepSeaMinWipeCooldownMs,
@@ -89,7 +89,7 @@ export default async (client: DiscordBot, interaction: any) => {
                 }
             }
         }
-        await getPersistenceCache().updateServerFields(guildId, ids.serverId, {
+        await getPersistenceService().updateServerFields(guildId, ids.serverId, {
             battlemetricsId: server.battlemetricsId,
             connect: server.connect ?? null,
         });
@@ -135,7 +135,7 @@ export default async (client: DiscordBot, interaction: any) => {
         if (smartSwitchProximity !== null && smartSwitchProximity >= 0) {
             server.switches[ids.entityId].proximity = smartSwitchProximity;
         }
-        await getPersistenceCache().updateSmartSwitchFields(guildId, ids.serverId, ids.entityId, {
+        await getPersistenceService().updateSmartSwitchFields(guildId, ids.serverId, ids.entityId, {
             name: server.switches[ids.entityId].name,
             command: server.switches[ids.entityId].command,
             proximity: server.switches[ids.entityId].proximity,
@@ -169,7 +169,7 @@ export default async (client: DiscordBot, interaction: any) => {
         ) {
             server.switchGroups[ids.groupId].command = groupCommand;
         }
-        await getPersistenceCache().updateSmartSwitchGroupFields(guildId, ids.serverId, ids.groupId, {
+        await getPersistenceService().updateSmartSwitchGroupFields(guildId, ids.serverId, ids.groupId, {
             name: server.switchGroups[ids.groupId].name,
             command: server.switchGroups[ids.groupId].command,
         });
@@ -202,7 +202,7 @@ export default async (client: DiscordBot, interaction: any) => {
         }
 
         server.switchGroups[ids.groupId].switches.push(switchId);
-        await getPersistenceCache().replaceSmartSwitchGroupSwitches(
+        await getPersistenceService().replaceSmartSwitchGroupSwitches(
             interaction.guildId,
             ids.serverId,
             ids.groupId,
@@ -231,7 +231,7 @@ export default async (client: DiscordBot, interaction: any) => {
         server.switchGroups[ids.groupId].switches = server.switchGroups[ids.groupId].switches.filter(
             (e: any) => e !== switchId,
         );
-        await getPersistenceCache().replaceSmartSwitchGroupSwitches(
+        await getPersistenceService().replaceSmartSwitchGroupSwitches(
             interaction.guildId,
             ids.serverId,
             ids.groupId,
@@ -268,7 +268,7 @@ export default async (client: DiscordBot, interaction: any) => {
         ) {
             server.alarms[ids.entityId].command = smartAlarmCommand;
         }
-        await getPersistenceCache().updateSmartAlarmFields(guildId, ids.serverId, ids.entityId, {
+        await getPersistenceService().updateSmartAlarmFields(guildId, ids.serverId, ids.entityId, {
             name: server.alarms[ids.entityId].name,
             message: server.alarms[ids.entityId].message,
             command: server.alarms[ids.entityId].command,
@@ -294,7 +294,7 @@ export default async (client: DiscordBot, interaction: any) => {
         }
 
         server.storageMonitors[ids.entityId].name = storageMonitorName;
-        await getPersistenceCache().updateStorageMonitorFields(interaction.guildId, ids.serverId, ids.entityId, {
+        await getPersistenceService().updateStorageMonitorFields(interaction.guildId, ids.serverId, ids.entityId, {
             name: server.storageMonitors[ids.entityId].name,
         });
 
@@ -345,7 +345,7 @@ export default async (client: DiscordBot, interaction: any) => {
                 }
             }
         }
-        await getPersistenceCache().updateTrackerFields(guildId, ids.trackerId, {
+        await getPersistenceService().updateTrackerFields(guildId, ids.trackerId, {
             name: tracker.name,
             battlemetricsId: tracker.battlemetricsId,
             clanTag: tracker.clanTag,
@@ -430,7 +430,7 @@ export default async (client: DiscordBot, interaction: any) => {
             steamId: steamId,
             playerId: playerId,
         });
-        await getPersistenceCache().replaceTrackerPlayers(interaction.guildId, ids.trackerId, tracker.players);
+        await getPersistenceService().replaceTrackerPlayers(interaction.guildId, ids.trackerId, tracker.players);
 
         client.log(
             client.intlGet(null, 'infoCap'),
@@ -484,7 +484,7 @@ export default async (client: DiscordBot, interaction: any) => {
             return;
         }
 
-        await getPersistenceCache().replaceTrackerPlayers(interaction.guildId, ids.trackerId, tracker.players);
+        await getPersistenceService().replaceTrackerPlayers(interaction.guildId, ids.trackerId, tracker.players);
 
         client.log(
             client.intlGet(null, 'infoCap'),

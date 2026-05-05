@@ -5,21 +5,21 @@ import type DiscordBot from '../structures/DiscordBot.js';
 const GameMap = GameMapModule;
 
 import * as Timer from '../domain/timer.js';
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 import * as SmartSwitchGroupHandlerModule from './smartSwitchGroupService.js';
 
 const SmartSwitchGroupHandler = SmartSwitchGroupHandlerModule;
 
 async function persistSmartSwitchState(guildId: string, serverId: string, entityId: string, instance: any) {
     const smartSwitch = instance.serverList[serverId].switches[entityId];
-    await getPersistenceCache().updateSmartSwitchFields(guildId, serverId, entityId, {
+    await getPersistenceService().updateSmartSwitchFields(guildId, serverId, entityId, {
         active: smartSwitch.active,
         reachable: smartSwitch.reachable,
     });
 }
 
 export async function syncSmartSwitches(rustplus: any, client: DiscordBot, time: any) {
-    const instance = await getPersistenceCache().readGuildState(rustplus.guildId);
+    const instance = await getPersistenceService().readGuildState(rustplus.guildId);
     const guildId = rustplus.guildId;
     const serverId = rustplus.serverId;
 
@@ -338,7 +338,7 @@ export async function syncSmartSwitches(rustplus: any, client: DiscordBot, time:
 export async function smartSwitchCommandHandler(rustplus: any, client: DiscordBot, command: string) {
     const guildId = rustplus.guildId;
     const serverId = rustplus.serverId;
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const switches = instance.serverList[serverId].switches;
     const prefix = rustplus.generalSettings.prefix;
 
@@ -453,7 +453,7 @@ export async function smartSwitchCommandHandler(rustplus: any, client: DiscordBo
     });
 
     rustplus.currentSwitchTimeouts[entityId] = setTimeout(async function () {
-        const instance = await getPersistenceCache().readGuildState(guildId);
+        const instance = await getPersistenceService().readGuildState(guildId);
         if (!Object.hasOwn(instance.serverList[serverId].switches, entityId)) return;
 
         await smartSwitchCommandTurnOnOff(rustplus, client, entityId, !active);
@@ -478,7 +478,7 @@ export async function smartSwitchCommandTurnOnOff(
 ) {
     const guildId = rustplus.guildId;
     const serverId = rustplus.serverId;
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const switches = instance.serverList[serverId].switches;
 
     const prevActive = switches[entityId].active;

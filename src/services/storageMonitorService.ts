@@ -1,10 +1,10 @@
 import * as DiscordMessages from '../discordTools/discordMessages.js';
 import * as Constants from '../domain/constants.js';
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 import type DiscordBot from '../structures/DiscordBot.js';
 
 export async function syncStorageMonitors(rustplus: any, client: DiscordBot) {
-    let instance = await getPersistenceCache().readGuildState(rustplus.guildId);
+    let instance = await getPersistenceService().readGuildState(rustplus.guildId);
     const guildId = rustplus.guildId;
     const serverId = rustplus.serverId;
 
@@ -19,9 +19,9 @@ export async function syncStorageMonitors(rustplus: any, client: DiscordBot) {
     }
 
     if (rustplus.storageMonitorIntervalCounter === 0) {
-        let instance = await getPersistenceCache().readGuildState(guildId);
+        let instance = await getPersistenceService().readGuildState(guildId);
         for (const entityId in instance.serverList[serverId].storageMonitors) {
-            instance = await getPersistenceCache().readGuildState(guildId);
+            instance = await getPersistenceService().readGuildState(guildId);
 
             const info = await rustplus.getEntityInfoAsync(entityId);
             if (!rustplus.isResponseValid(info)) {
@@ -32,7 +32,7 @@ export async function syncStorageMonitors(rustplus: any, client: DiscordBot) {
             } else {
                 instance.serverList[serverId].storageMonitors[entityId].reachable = true;
             }
-            await getPersistenceCache().updateStorageMonitorFields(guildId, serverId, entityId, {
+            await getPersistenceService().updateStorageMonitorFields(guildId, serverId, entityId, {
                 reachable: instance.serverList[serverId].storageMonitors[entityId].reachable,
             });
 
@@ -80,7 +80,7 @@ export async function syncStorageMonitors(rustplus: any, client: DiscordBot) {
                     } else if (info.entityInfo.payload.capacity === Constants.STORAGE_MONITOR_LARGE_WOOD_BOX_CAPACITY) {
                         instance.serverList[serverId].storageMonitors[entityId].type = 'largeWoodBox';
                     }
-                    await getPersistenceCache().updateStorageMonitorFields(guildId, serverId, entityId, {
+                    await getPersistenceService().updateStorageMonitorFields(guildId, serverId, entityId, {
                         decaying: instance.serverList[serverId].storageMonitors[entityId].decaying,
                         type: instance.serverList[serverId].storageMonitors[entityId].type,
                     });

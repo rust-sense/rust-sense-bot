@@ -37,10 +37,6 @@ export function getPersistenceService(): PersistenceService {
     return service;
 }
 
-export function getPersistenceCache(): PersistenceService {
-    return getPersistenceService();
-}
-
 export function isPersistenceInitialized(): boolean {
     return service !== null;
 }

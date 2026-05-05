@@ -2,7 +2,7 @@ import { SlashCommandBuilder } from '@discordjs/builders';
 import { MessageFlags } from 'discord.js';
 import * as DiscordEmbeds from '../discordTools/discordEmbeds.js';
 import * as Constants from '../domain/constants.js';
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 import type DiscordBot from '../structures/DiscordBot.js';
 
 export default {
@@ -34,7 +34,7 @@ export default {
 
     async execute(client: DiscordBot, interaction: any) {
         const guildId = interaction.guildId;
-        const instance = await getPersistenceCache().readGuildState(guildId);
+        const instance = await getPersistenceService().readGuildState(guildId);
         const rustplus = client.rustplusInstances[guildId];
 
         const verifyId = client.generateVerifyId();
@@ -57,7 +57,7 @@ export default {
                 {
                     const mode = normalizeAccessMode(interaction.options.getString('mode'));
                     instance.generalSettings.inGameCommandAccessMode = mode;
-                    await getPersistenceCache().setGeneralSetting(guildId, 'inGameCommandAccessMode', mode);
+                    await getPersistenceService().setGeneralSetting(guildId, 'inGameCommandAccessMode', mode);
 
                     if (rustplus) rustplus.generalSettings.inGameCommandAccessMode = mode;
 

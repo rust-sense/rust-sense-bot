@@ -1,11 +1,11 @@
 import * as Constants from '../domain/constants.js';
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 import type { DiscordBot } from '../types/discord.js';
 import * as DiscordMessages from './discordMessages.js';
 import * as DiscordTools from './discordTools.js';
 
 export default async function setupStorageMonitors(client: DiscordBot, rustplus: any) {
-    const instance = await getPersistenceCache().readGuildState(rustplus.guildId);
+    const instance = await getPersistenceService().readGuildState(rustplus.guildId);
     const guildId = rustplus.guildId;
     const serverId = rustplus.serverId;
 
@@ -25,7 +25,7 @@ export default async function setupStorageMonitors(client: DiscordBot, rustplus:
         } else {
             entity.reachable = true;
         }
-        await getPersistenceCache().updateStorageMonitorFields(guildId, serverId, entityId, {
+        await getPersistenceService().updateStorageMonitorFields(guildId, serverId, entityId, {
             reachable: entity.reachable,
         });
 
@@ -50,7 +50,7 @@ export default async function setupStorageMonitors(client: DiscordBot, rustplus:
                 } else if (info.entityInfo.payload.capacity === Constants.STORAGE_MONITOR_LARGE_WOOD_BOX_CAPACITY) {
                     entity.type = 'largeWoodBox';
                 }
-                await getPersistenceCache().updateStorageMonitorFields(guildId, serverId, entityId, {
+                await getPersistenceService().updateStorageMonitorFields(guildId, serverId, entityId, {
                     decaying: entity.decaying,
                     type: entity.type,
                 });

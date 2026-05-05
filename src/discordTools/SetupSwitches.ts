@@ -1,10 +1,10 @@
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 import type { DiscordBot } from '../types/discord.js';
 import * as DiscordMessages from './discordMessages.js';
 import * as DiscordTools from './discordTools.js';
 
 export default async function setupSwitches(client: DiscordBot, rustplus: any) {
-    const instance = await getPersistenceCache().readGuildState(rustplus.guildId);
+    const instance = await getPersistenceService().readGuildState(rustplus.guildId);
     const guildId = rustplus.guildId;
     const serverId = rustplus.serverId;
 
@@ -27,7 +27,7 @@ export default async function setupSwitches(client: DiscordBot, rustplus: any) {
 
         if (entity.reachable) entity.active = info.entityInfo.payload.value;
 
-        await getPersistenceCache().updateSmartSwitchFields(guildId, serverId, entityId, {
+        await getPersistenceService().updateSmartSwitchFields(guildId, serverId, entityId, {
             active: entity.active,
             reachable: entity.reachable,
         });

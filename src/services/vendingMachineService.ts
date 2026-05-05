@@ -1,6 +1,6 @@
 import * as DiscordMessages from '../discordTools/discordMessages.js';
 import * as GameMapModule from '../domain/GameMap.js';
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 import type DiscordBot from '../structures/DiscordBot.js';
 
 const GameMap = GameMapModule;
@@ -12,7 +12,7 @@ export async function syncVendingMachines(rustplus: any, client: DiscordBot, map
 
 export async function checkChanges(rustplus: any, client: DiscordBot, mapMarkers: any) {
     const guildId = rustplus.guildId;
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const subscriptionList = instance.marketSubscriptionList;
     const vendingMachineType = rustplus.mapMarkers.types.VendingMachine;
     const vendingMachines = rustplus.mapMarkers.getMarkersOfType(vendingMachineType, mapMarkers.markers);

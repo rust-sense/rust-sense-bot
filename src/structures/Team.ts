@@ -1,5 +1,5 @@
 import { client } from '../index.js';
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 import Player from './Player.js';
 
 interface TeamData {
@@ -82,7 +82,7 @@ export default class Team {
     }
 
     async updateTeam(team: TeamData): Promise<void> {
-        const instance = await getPersistenceCache().readGuildState(this.rustplus.guildId);
+        const instance = await getPersistenceService().readGuildState(this.rustplus.guildId);
 
         if (this.isLeaderSteamIdChanged(team)) {
             let player = this.getPlayer(this.leaderSteamId);
@@ -115,7 +115,7 @@ export default class Team {
                 let color = '#';
                 for (let i = 0; i < 6; i++) color += letters[Math.floor(Math.random() * 16)];
                 instance.teamChatColors[steamId] = color;
-                await getPersistenceCache().setTeamChatColor(this.rustplus.guildId, steamId, color);
+                await getPersistenceService().setTeamChatColor(this.rustplus.guildId, steamId, color);
             }
         }
 

@@ -1,12 +1,12 @@
 import * as Discord from 'discord.js';
 import config from '../config.js';
 import * as DiscordTools from '../discordTools/discordTools.js';
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 
 const writeableChannels = ['commands', 'teamchat'];
 
 export async function getPermissionsReset(client, guild, permissionWrite = false) {
-    const instance = await getPersistenceCache().readGuildState(guild.id);
+    const instance = await getPersistenceService().readGuildState(guild.id);
 
     const perms = [];
     const everyoneAllow = [];
@@ -82,7 +82,7 @@ export async function getPermissionsReset(client, guild, permissionWrite = false
 }
 
 export async function getPermissionsRemoved(client, guild) {
-    const instance = await getPersistenceCache().readGuildState(guild.id);
+    const instance = await getPersistenceService().readGuildState(guild.id);
 
     const perms = [];
 
@@ -112,7 +112,7 @@ export async function getPermissionsRemoved(client, guild) {
 }
 
 export async function resetPermissionsAllChannels(client, guild) {
-    const instance = await getPersistenceCache().readGuildState(guild.id);
+    const instance = await getPersistenceService().readGuildState(guild.id);
 
     if (instance.channelId.category === null) return;
 

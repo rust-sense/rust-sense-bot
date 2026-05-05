@@ -8,7 +8,7 @@ import * as DiscordMessages from '../discordTools/discordMessages.js';
 import * as DiscordTools from '../discordTools/discordTools.js';
 import * as GameMap from '../domain/GameMap.js';
 import * as Scrape from './scrape.js';
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 import { cwdPath } from '../utils/filesystemUtils.js';
 
 /**
@@ -21,7 +21,7 @@ export default async (client: any, guild: any, steamId: string | null = null) =>
     const isLite = steamId !== null;
     const logPrefix = isLite ? 'FCM Lite' : 'FCM Host';
 
-    const credentials = await getPersistenceCache().getCredentials(guild.id);
+    const credentials = await getPersistenceService().getCredentials(guild.id);
     const hoster = credentials.hoster;
 
     if (isLite) {
@@ -354,7 +354,7 @@ async function pairingServer(
     isLite: boolean,
     activeSteamId: any,
 ) {
-    const instance = await getPersistenceCache().readGuildState(guild.id);
+    const instance = await getPersistenceService().readGuildState(guild.id);
     const serverId = `${body.ip}-${body.port}`;
 
     if (isLite) {
@@ -368,7 +368,7 @@ async function pairingServer(
             steamId: body.playerId,
             playerToken: body.playerToken,
         };
-        await getPersistenceCache().upsertServerLiteEntry(guild.id, serverId, activeSteamId, {
+        await getPersistenceService().upsertServerLiteEntry(guild.id, serverId, activeSteamId, {
             serverIp: body.ip,
             appPort: body.port,
             steamId: body.playerId,
@@ -444,8 +444,8 @@ async function pairingServer(
             playerToken: body.playerToken,
         };
 
-        await getPersistenceCache().upsertServer(guild.id, serverId, instance.serverList[serverId]);
-        await getPersistenceCache().upsertServerLiteEntry(guild.id, serverId, body.playerId, {
+        await getPersistenceService().upsertServer(guild.id, serverId, instance.serverList[serverId]);
+        await getPersistenceService().upsertServerLiteEntry(guild.id, serverId, body.playerId, {
             serverIp: body.ip,
             appPort: body.port,
             steamId: body.playerId,
@@ -457,7 +457,7 @@ async function pairingServer(
 }
 
 async function pairingEntitySwitch(client: any, guild: any, body: any, pairingPlayerId: any) {
-    const instance = await getPersistenceCache().readGuildState(guild.id);
+    const instance = await getPersistenceService().readGuildState(guild.id);
     const serverId = `${body.ip}-${body.port}`;
     if (!Object.hasOwn(instance.serverList, serverId)) return;
 
@@ -478,7 +478,7 @@ async function pairingEntitySwitch(client: any, guild: any, body: any, pairingPl
         proximity: entityExist ? switches[body.entityId].proximity : Constants.PROXIMITY_SETTING_DEFAULT_METERS,
         messageId: entityExist ? switches[body.entityId].messageId : null,
     };
-    await getPersistenceCache().upsertSmartSwitch(
+    await getPersistenceService().upsertSmartSwitch(
         guild.id,
         serverId,
         body.entityId,
@@ -506,7 +506,7 @@ async function pairingEntitySwitch(client: any, guild: any, body: any, pairingPl
         if (instance.serverList[serverId].switches[body.entityId].reachable) {
             instance.serverList[serverId].switches[body.entityId].active = info.entityInfo.payload.value;
         }
-        await getPersistenceCache().upsertSmartSwitch(
+        await getPersistenceService().upsertSmartSwitch(
             guild.id,
             serverId,
             body.entityId,
@@ -518,7 +518,7 @@ async function pairingEntitySwitch(client: any, guild: any, body: any, pairingPl
 }
 
 async function pairingEntitySmartAlarm(client: any, guild: any, body: any, pairingPlayerId: any) {
-    const instance = await getPersistenceCache().readGuildState(guild.id);
+    const instance = await getPersistenceService().readGuildState(guild.id);
     const serverId = `${body.ip}-${body.port}`;
     if (!Object.hasOwn(instance.serverList, serverId)) return;
 
@@ -541,7 +541,7 @@ async function pairingEntitySmartAlarm(client: any, guild: any, body: any, pairi
         inGame: entityExist ? alarms[body.entityId].inGame : true,
         messageId: entityExist ? alarms[body.entityId].messageId : null,
     };
-    await getPersistenceCache().upsertSmartAlarm(
+    await getPersistenceService().upsertSmartAlarm(
         guild.id,
         serverId,
         body.entityId,
@@ -567,7 +567,7 @@ async function pairingEntitySmartAlarm(client: any, guild: any, body: any, pairi
         if (instance.serverList[serverId].alarms[body.entityId].reachable) {
             instance.serverList[serverId].alarms[body.entityId].active = info.entityInfo.payload.value;
         }
-        await getPersistenceCache().upsertSmartAlarm(
+        await getPersistenceService().upsertSmartAlarm(
             guild.id,
             serverId,
             body.entityId,
@@ -579,7 +579,7 @@ async function pairingEntitySmartAlarm(client: any, guild: any, body: any, pairi
 }
 
 async function pairingEntityStorageMonitor(client: any, guild: any, body: any, pairingPlayerId: any) {
-    const instance = await getPersistenceCache().readGuildState(guild.id);
+    const instance = await getPersistenceService().readGuildState(guild.id);
     const serverId = `${body.ip}-${body.port}`;
     if (!Object.hasOwn(instance.serverList, serverId)) return;
 
@@ -603,7 +603,7 @@ async function pairingEntityStorageMonitor(client: any, guild: any, body: any, p
         server: entityExist ? storageMonitors[body.entityId].server : body.name,
         messageId: entityExist ? storageMonitors[body.entityId].messageId : null,
     };
-    await getPersistenceCache().upsertStorageMonitor(
+    await getPersistenceService().upsertStorageMonitor(
         guild.id,
         serverId,
         body.entityId,
@@ -648,7 +648,7 @@ async function pairingEntityStorageMonitor(client: any, guild: any, body: any, p
                 hasProtection: info.entityInfo.payload.hasProtection,
             };
         }
-        await getPersistenceCache().upsertStorageMonitor(
+        await getPersistenceService().upsertStorageMonitor(
             guild.id,
             serverId,
             body.entityId,
@@ -670,7 +670,7 @@ async function alarmAlarm(client: any, guild: any, title: any, message: any, bod
     to the credential owner and which is not part of the currently connected rust server can notify IF the general
     setting fcmAlarmNotificationEnabled is enabled. Those notifications will be handled here. */
 
-    const instance = await getPersistenceCache().readGuildState(guild.id);
+    const instance = await getPersistenceService().readGuildState(guild.id);
     const serverId = `${body.ip}-${body.port}`;
     const entityId = body.entityId;
     const server = instance.serverList[serverId];
@@ -680,7 +680,7 @@ async function alarmAlarm(client: any, guild: any, title: any, message: any, bod
 
     if ((!rustplus || rustplus.serverId !== serverId) && instance.generalSettings.fcmAlarmNotificationEnabled) {
         server.alarms[entityId].lastTrigger = Math.floor(Date.now() / 1000);
-        await getPersistenceCache().updateSmartAlarmFields(guild.id, serverId, entityId, {
+        await getPersistenceService().updateSmartAlarmFields(guild.id, serverId, entityId, {
             lastTrigger: server.alarms[entityId].lastTrigger,
         });
         await DiscordMessages.sendSmartAlarmTriggerMessage(guild.id, serverId, entityId);
@@ -689,7 +689,7 @@ async function alarmAlarm(client: any, guild: any, title: any, message: any, bod
 }
 
 async function alarmRaidAlarm(client: any, guild: any, title: any, message: any, body: any) {
-    const instance = await getPersistenceCache().readGuildState(guild.id);
+    const instance = await getPersistenceService().readGuildState(guild.id);
     const serverId = `${body.ip}-${body.port}`;
     const rustplus = client.rustplusInstances[guild.id];
 
@@ -728,7 +728,7 @@ async function playerDeath(client: any, guild: any, title: any, message: any, bo
 }
 
 async function teamLogin(client: any, guild: any, title: any, message: any, body: any) {
-    const instance = await getPersistenceCache().readGuildState(guild.id);
+    const instance = await getPersistenceService().readGuildState(guild.id);
     const rustplus = client.rustplusInstances[guild.id];
     const serverId = `${body.ip}-${body.port}`;
 
@@ -758,7 +758,7 @@ async function teamLogin(client: any, guild: any, title: any, message: any, body
 }
 
 //async function newsNews(client, guild, full, data, body) {
-//    const instance = await getPersistenceCache().readGuildState(guild.id);
+//    const instance = await getPersistenceService().readGuildState(guild.id);
 //
 //    const content = {
 //        embeds: [DiscordEmbeds.getNewsEmbed(guild.id, data)],

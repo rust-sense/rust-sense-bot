@@ -5,7 +5,7 @@ import * as DiscordEmbeds from '../discordTools/discordEmbeds.js';
 import * as DiscordMessages from '../discordTools/discordMessages.js';
 import * as DiscordTools from '../discordTools/discordTools.js';
 import { normalizeFcmNumericCredential } from '../lib/fcm/credentials.js';
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 import type DiscordBot from '../structures/DiscordBot.js';
 
 export default {
@@ -119,7 +119,7 @@ export default {
 
 async function addCredentials(client: DiscordBot, interaction: any, verifyId: string) {
     const guildId = interaction.guildId;
-    const credentials = await getPersistenceCache().getCredentials(guildId);
+    const credentials = await getPersistenceService().getCredentials(guildId);
     const steamId = interaction.options.getString('steam_id');
     const isHoster = interaction.options.getBoolean('host') || Object.keys(credentials).length === 1;
     let androidId: string;
@@ -167,7 +167,7 @@ async function addCredentials(client: DiscordBot, interaction: any, verifyId: st
     const prevHoster = credentials.hoster;
     if (isHoster) credentials.hoster = steamId;
 
-    await getPersistenceCache().setCredentials(guildId, credentials);
+    await getPersistenceService().setCredentials(guildId, credentials);
 
     /* Start Fcm Listener */
     const FcmListener = await import('../infrastructure/FcmListener.js');
@@ -208,7 +208,7 @@ async function addCredentials(client: DiscordBot, interaction: any, verifyId: st
 
 async function removeCredentials(client: DiscordBot, interaction: any, verifyId: string) {
     const guildId = interaction.guildId;
-    const credentials = await getPersistenceCache().getCredentials(guildId);
+    const credentials = await getPersistenceService().getCredentials(guildId);
     let steamId = interaction.options.getString('steam_id');
 
     if (steamId && steamId in credentials && credentials[steamId].discord_user_id !== interaction.member.user.id) {
@@ -254,7 +254,7 @@ async function removeCredentials(client: DiscordBot, interaction: any, verifyId:
     }
 
     delete credentials[steamId];
-    await getPersistenceCache().setCredentials(guildId, credentials);
+    await getPersistenceService().setCredentials(guildId, credentials);
 
     client.log(
         client.intlGet(null, 'infoCap'),
@@ -287,7 +287,7 @@ async function showCredentials(client: DiscordBot, interaction: any, verifyId: s
 
 async function setHosterCredentials(client: DiscordBot, interaction: any, verifyId: string) {
     const guildId = interaction.guildId;
-    const credentials = await getPersistenceCache().getCredentials(guildId);
+    const credentials = await getPersistenceService().getCredentials(guildId);
     let steamId = interaction.options.getString('steam_id');
 
     if (!(await client.isAdministrator(interaction))) {
@@ -312,13 +312,13 @@ async function setHosterCredentials(client: DiscordBot, interaction: any, verify
 
     const prevHoster = credentials.hoster;
     credentials.hoster = steamId;
-    await getPersistenceCache().setCredentials(guildId, credentials);
+    await getPersistenceService().setCredentials(guildId, credentials);
 
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const rustplus = client.rustplusInstances[guildId];
     if (rustplus) {
         instance.activeServer = null;
-        await getPersistenceCache().updateGuildCoreFields(guildId, { activeServer: null });
+        await getPersistenceService().updateGuildCoreFields(guildId, { activeServer: null });
         client.resetRustplusVariables(guildId);
         rustplus.disconnect();
         delete client.rustplusInstances[guildId];

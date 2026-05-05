@@ -3,14 +3,14 @@ import { PermissionFlagsBits } from 'discord.js';
 
 import * as DiscordTools from '../discordTools/discordTools.js';
 import * as PermissionHandler from '../handlers/permissionHandler.js';
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 import type { DiscordBot } from '../types/discord.js';
 
 export default async function setupGuildCategory(
     client: DiscordBot,
     guild: Guild,
 ): Promise<CategoryChannel | undefined> {
-    const instance = await getPersistenceCache().readGuildState(guild.id);
+    const instance = await getPersistenceService().readGuildState(guild.id);
     const perms = await PermissionHandler.getPermissionsReset(client, guild, false);
 
     let category: CategoryChannel | undefined = undefined;
@@ -27,7 +27,7 @@ export default async function setupGuildCategory(
             return undefined;
         }
         instance.channelId.category = category.id;
-        await getPersistenceCache().setDiscordReferencedIds(guild.id, [
+        await getPersistenceService().setDiscordReferencedIds(guild.id, [
             { key: 'channel.category', value: category.id },
         ]);
     }

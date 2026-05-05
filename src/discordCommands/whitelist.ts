@@ -2,7 +2,7 @@ import { SlashCommandBuilder } from '@discordjs/builders';
 import { MessageFlags } from 'discord.js';
 import * as DiscordEmbeds from '../discordTools/discordEmbeds.js';
 import * as Constants from '../domain/constants.js';
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 import type DiscordBot from '../structures/DiscordBot.js';
 
 const { scrapeSteamProfileName } = await import('../infrastructure/scrape.js');
@@ -43,7 +43,7 @@ export default {
 
     async execute(client: DiscordBot, interaction: any) {
         const guildId = interaction.guildId;
-        const instance = await getPersistenceCache().readGuildState(guildId);
+        const instance = await getPersistenceService().readGuildState(guildId);
 
         const verifyId = client.generateVerifyId();
         client.logInteraction(interaction, verifyId, 'slashCommand');
@@ -73,7 +73,7 @@ export default {
                         successful = 1;
                     } else {
                         instance.whitelist['steamIds'].push(steamid);
-                        await getPersistenceCache().addWhitelistSteamId(guildId, steamid);
+                        await getPersistenceService().addWhitelistSteamId(guildId, steamid);
                         str = client.intlGet(guildId, 'userAddedToWhitelist', { user: steamName });
                     }
 
@@ -106,7 +106,7 @@ export default {
                         instance.whitelist['steamIds'] = instance.whitelist['steamIds'].filter(
                             (e: string) => e !== steamid,
                         );
-                        await getPersistenceCache().removeWhitelistSteamId(guildId, steamid);
+                        await getPersistenceService().removeWhitelistSteamId(guildId, steamid);
                         str = client.intlGet(guildId, 'userRemovedFromWhitelist', { user: steamName });
                     }
 

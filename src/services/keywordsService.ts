@@ -1,4 +1,4 @@
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 export function getListOfCommandKeywords(
     client: { intlGet: (guildId: string | null, key: string) => string },
     guildId: string,
@@ -100,7 +100,7 @@ export async function getListOfUsedKeywords(
     guildId: string,
     serverId: string,
 ): Promise<string[]> {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
 
     let list = [...getListOfCommandKeywords(client, guildId)];
     const server = instance.serverList[serverId];

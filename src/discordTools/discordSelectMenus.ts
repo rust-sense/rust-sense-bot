@@ -3,7 +3,7 @@ import * as Discord from 'discord.js';
 import * as Constants from '../domain/constants.js';
 import { languages as Languages } from '../domain/languages.js';
 import { client } from '../index.js';
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 import { getTTSProvider } from '../tts/getTTSProvider.js';
 import { cwdPath } from '../utils/filesystemUtils.js';
 
@@ -194,7 +194,7 @@ export function getCommandDelaySelectMenu(guildId: string, delay: string) {
 }
 
 export async function getSmartSwitchSelectMenu(guildId: string, serverId: string, entityId: string) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const entity = instance.serverList[serverId].switches[entityId];
     const identifier = JSON.stringify({ serverId: serverId, entityId: entityId });
 
@@ -358,12 +358,12 @@ export function getTTSProviderSelectMenu(guildId: string, provider: string) {
 }
 
 export async function getTTSSettingsComponents(guildId: string) {
-    const { ttsProvider } = (await getPersistenceCache().readGuildState(guildId)).generalSettings;
+    const { ttsProvider } = (await getPersistenceService().readGuildState(guildId)).generalSettings;
     return [getTTSProviderSelectMenu(guildId, ttsProvider ?? 'oddcast'), await getTTSVoiceSelectMenu(guildId)];
 }
 
 export async function getTTSVoiceSelectMenu(guildId: string) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const { language, ttsProvider, voiceGender, piperVoice } = instance.generalSettings;
     const provider = await getTTSProvider(guildId);
     const voices = await provider.getVoices(language);

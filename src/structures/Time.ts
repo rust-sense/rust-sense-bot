@@ -1,5 +1,5 @@
 import * as TimeLib from '../domain/timer.js';
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 
 interface TimeData {
     dayLengthMinutes: number;
@@ -145,7 +145,7 @@ export default class Time {
     }
 
     async loadTimeTillConfig(): Promise<void> {
-        const instance = await getPersistenceCache().readGuildState(this.rustplus.guildId);
+        const instance = await getPersistenceService().readGuildState(this.rustplus.guildId);
         const server = instance.serverList[this.rustplus.serverId];
 
         if (server.timeTillDay !== null) this.timeTillDay = server.timeTillDay;

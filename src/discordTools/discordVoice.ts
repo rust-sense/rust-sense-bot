@@ -1,7 +1,7 @@
 import { AudioPlayerStatus, createAudioPlayer, createAudioResource, getVoiceConnection } from '@discordjs/voice';
 
 import { client } from '../index.js';
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 import { getTTSProvider } from '../tts/getTTSProvider.js';
 
 const ttsPlayers = new Map<string, ReturnType<typeof createAudioPlayer>>();
@@ -58,7 +58,7 @@ export async function sendDiscordVoiceMessage(guildId: string, text: string) {
     const connection = getVoiceConnection(guildId);
     if (!connection) return;
 
-    const { language, voiceGender, ttsProvider, piperVoice } = (await getPersistenceCache().readGuildState(guildId))
+    const { language, voiceGender, ttsProvider, piperVoice } = (await getPersistenceService().readGuildState(guildId))
         .generalSettings;
     const voice = ttsProvider === 'piper' ? piperVoice : voiceGender;
 

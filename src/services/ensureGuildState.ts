@@ -1,17 +1,17 @@
 import * as Constants from '../domain/constants.js';
 import { buildDefaultGeneralSettings, buildDefaultNotificationSettings } from '../domain/guildSettings.js';
 import { createEmptyInstance } from '../domain/guildState.js';
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 import type { Instance } from '../types/instance.js';
 
 export default async function ensureGuildState(_client: unknown, guild: { id: string }): Promise<void> {
     let instance: Instance | null = null;
-    const persistedInstanceExists = await getPersistenceCache().hasGuild(guild.id);
+    const persistedInstanceExists = await getPersistenceService().hasGuild(guild.id);
 
     if (!persistedInstanceExists) {
         instance = createEmptyInstance();
     } else {
-        instance = await getPersistenceCache().readGuildState(guild.id);
+        instance = await getPersistenceService().readGuildState(guild.id);
         const defaultInstance = createEmptyInstance();
 
         if (!Object.hasOwn(instance, 'firstTime')) {
@@ -149,18 +149,18 @@ export default async function ensureGuildState(_client: unknown, guild: { id: st
     }
 
     if (!persistedInstanceExists) {
-        await getPersistenceCache().bootstrapGuildState(guild.id, instance);
+        await getPersistenceService().bootstrapGuildState(guild.id, instance);
         return;
     }
 
-    await getPersistenceCache().updateGuildCoreFields(guild.id, {
+    await getPersistenceService().updateGuildCoreFields(guild.id, {
         activeServer: instance.activeServer,
         adminRole: instance.adminRole,
         firstTime: instance.firstTime,
         role: instance.role,
     });
-    await getPersistenceCache().setGuildSettingsFromState(guild.id, instance);
-    await getPersistenceCache().setDiscordReferencedIds(guild.id, [
+    await getPersistenceService().setGuildSettingsFromState(guild.id, instance);
+    await getPersistenceService().setDiscordReferencedIds(guild.id, [
         ...Object.entries(instance.channelId).map(([key, value]) => ({ key: `channel.${key}`, value })),
         ...Object.entries(instance.informationMessageId).map(([key, value]) => ({
             key: `informationMessage.${key}`,
@@ -168,6 +168,6 @@ export default async function ensureGuildState(_client: unknown, guild: { id: st
         })),
     ]);
     for (const [serverId, server] of Object.entries(instance.serverList)) {
-        await getPersistenceCache().upsertServer(guild.id, serverId, server);
+        await getPersistenceService().upsertServer(guild.id, serverId, server);
     }
 }

@@ -3,7 +3,7 @@ import { MessageFlags } from 'discord.js';
 
 import * as DiscordEmbeds from '../discordTools/discordEmbeds.js';
 import * as DiscordMessages from '../discordTools/discordMessages.js';
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 import { getSmartDevice } from '../services/smartDevice.js';
 import type DiscordBot from '../structures/DiscordBot.js';
 
@@ -101,7 +101,7 @@ export default {
 
     async execute(client: DiscordBot, interaction: any) {
         const guildId = interaction.guildId;
-        const instance = await getPersistenceCache().readGuildState(guildId);
+        const instance = await getPersistenceService().readGuildState(guildId);
 
         const verifyId = client.generateVerifyId();
         client.logInteraction(interaction, verifyId, 'slashCommand');
@@ -129,7 +129,7 @@ export default {
 
                     if (image !== null) {
                         instance.serverList[device.serverId].alarms[entityId].image = `${image}.png`;
-                        await getPersistenceCache().updateSmartAlarmFields(guildId, device.serverId, entityId, {
+                        await getPersistenceService().updateSmartAlarmFields(guildId, device.serverId, entityId, {
                             image: `${image}.png`,
                         });
                     }

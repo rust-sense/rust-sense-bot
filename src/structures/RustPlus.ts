@@ -13,7 +13,7 @@ import { languages } from '../domain/languages.js';
 import * as Timer from '../domain/timer.js';
 import getRuntimeDataStorage from '../infrastructure/getRuntimeDataStorage.js';
 import { RustPlus as RustPlusLib } from '../lib/rustplus/RustPlus.js';
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 import rustplusEvents from '../rustplusEvents/index.js';
 import * as InGameChatHandler from '../services/inGameChatService.js';
 import * as TeamHandler from '../services/teamService.js';
@@ -162,7 +162,7 @@ export default class RustPlus extends RustPlusLib {
 
     async loadMarkers(): Promise<void> {
         const client = getClient();
-        const instance = await getPersistenceCache().readGuildState(this.guildId);
+        const instance = await getPersistenceService().readGuildState(this.guildId);
 
         for (const [name, location] of Object.entries(instance.serverList[this.serverId].markers) as [
             string,
@@ -475,7 +475,7 @@ export default class RustPlus extends RustPlusLib {
 
     async build(): Promise<void> {
         const client = getClient();
-        const instance = await getPersistenceCache().readGuildState(this.guildId);
+        const instance = await getPersistenceService().readGuildState(this.guildId);
 
         this.logger = new Logger(`${this.guildId}.log`);
         this.logger.setGuildId(this.guildId);
@@ -500,7 +500,7 @@ export default class RustPlus extends RustPlusLib {
             this.leaderRustPlusInstance = null;
         }
 
-        const instance = await getPersistenceCache().readGuildState(this.guildId);
+        const instance = await getPersistenceService().readGuildState(this.guildId);
         const leader = this.team.leaderSteamId;
         if (leader === this.playerId) return;
         if (!(leader in instance.serverListLite[this.serverId])) return;
@@ -519,7 +519,7 @@ export default class RustPlus extends RustPlusLib {
     }
 
     async isServerAvailable(): Promise<boolean> {
-        const instance = await getPersistenceCache().readGuildState(this.guildId);
+        const instance = await getPersistenceService().readGuildState(this.guildId);
         return Object.hasOwn(instance.serverList, this.serverId);
     }
 
@@ -1325,7 +1325,7 @@ export default class RustPlus extends RustPlusLib {
 
         if (!this.generalSettings.leaderCommandEnabled) return client.intlGet(this.guildId, 'leaderCommandIsDisabled');
 
-        const instance = await getPersistenceCache().readGuildState(this.guildId);
+        const instance = await getPersistenceService().readGuildState(this.guildId);
         if (!Object.keys(instance.serverListLite[this.serverId]).includes(this.team.leaderSteamId)) {
             const names = this.team.players
                 .filter((p: any) => Object.keys(instance.serverListLite[this.serverId]).includes(p.steamId))
@@ -1405,14 +1405,14 @@ export default class RustPlus extends RustPlusLib {
             if (!(await this.isResponseValid(teamInfo))) return null;
             for (const player of teamInfo.teamInfo.members) {
                 if (player.steamId.toString() === callerSteamId) {
-                    const instance = await getPersistenceCache().readGuildState(this.guildId);
+                    const instance = await getPersistenceService().readGuildState(this.guildId);
                     const location = GameMap.getPos(player.x, player.y, this.info.correctedMapSize, this);
                     instance.serverList[this.serverId].markers[name] = {
                         x: player.x,
                         y: player.y,
                         location: location.location,
                     };
-                    await getPersistenceCache().upsertMarker(this.guildId, this.serverId, name, {
+                    await getPersistenceService().upsertMarker(this.guildId, this.serverId, name, {
                         x: player.x,
                         y: player.y,
                         location: location.location,
@@ -1427,10 +1427,10 @@ export default class RustPlus extends RustPlusLib {
         ) {
             if (!(name in this.markers)) return client.intlGet(this.guildId, 'markerDoesNotExist', { name });
             const location = this.markers[name].location;
-            const instance = await getPersistenceCache().readGuildState(this.guildId);
+            const instance = await getPersistenceService().readGuildState(this.guildId);
             delete this.markers[name];
             delete instance.serverList[this.serverId].markers[name];
-            await getPersistenceCache().deleteMarker(this.guildId, this.serverId, name);
+            await getPersistenceService().deleteMarker(this.guildId, this.serverId, name);
             return client.intlGet(this.guildId, 'markerRemoved', { name, location });
         } else {
             if (!(rest in this.markers)) return client.intlGet(this.guildId, 'markerDoesNotExist', { name: rest });
@@ -1456,7 +1456,7 @@ export default class RustPlus extends RustPlusLib {
 
     async getCommandMarket(command: string): Promise<string | null> {
         const client = getClient();
-        const instance = await getPersistenceCache().readGuildState(this.guildId);
+        const instance = await getPersistenceService().readGuildState(this.guildId);
         const prefix = this.generalSettings.prefix;
         const cmdMarket = `${prefix}${client.intlGet(this.guildId, 'commandSyntaxMarket')}`;
         const cmdMarketEn = `${prefix}${client.intlGet('en', 'commandSyntaxMarket')}`;
@@ -1517,7 +1517,7 @@ export default class RustPlus extends RustPlusLib {
                 return client.intlGet(this.guildId, 'alreadySubscribedToItem', { name: r.itemName });
             instance.marketSubscriptionList[orderType].push(r.itemId);
             this.firstPollItems[orderType].push(r.itemId);
-            await getPersistenceCache().addMarketSubscription(this.guildId, orderType, r.itemId);
+            await getPersistenceService().addMarketSubscription(this.guildId, orderType, r.itemId);
             return client.intlGet(this.guildId, 'justSubscribedToItem', { name: r.itemName });
         } else if (sub === cmdUnsub.toLowerCase() || sub === cmdUnsubEn.toLowerCase()) {
             if (!isMarketOrderType(orderType))
@@ -1529,7 +1529,7 @@ export default class RustPlus extends RustPlusLib {
             instance.marketSubscriptionList[orderType] = instance.marketSubscriptionList[orderType].filter(
                 (e: any) => e !== r.itemId,
             );
-            await getPersistenceCache().removeMarketSubscription(this.guildId, orderType, r.itemId);
+            await getPersistenceService().removeMarketSubscription(this.guildId, orderType, r.itemId);
             return client.intlGet(this.guildId, 'removedSubscribeItem', { name: r.itemName });
         } else if (sub === cmdList.toLowerCase() || sub === cmdListEn.toLowerCase()) {
             const parts: string[] = [];
@@ -1546,16 +1546,16 @@ export default class RustPlus extends RustPlusLib {
 
     async getCommandMute(): Promise<string> {
         const client = getClient();
-        const instance = await getPersistenceCache().readGuildState(this.guildId);
+        const instance = await getPersistenceService().readGuildState(this.guildId);
         instance.generalSettings.muteInGameBotMessages = true;
         this.generalSettings.muteInGameBotMessages = true;
-        await getPersistenceCache().setGeneralSetting(this.guildId, 'muteInGameBotMessages', true);
+        await getPersistenceService().setGeneralSetting(this.guildId, 'muteInGameBotMessages', true);
         return client.intlGet(this.guildId, 'inGameBotMessagesMuted');
     }
 
     async getCommandNote(command: string): Promise<any> {
         const client = getClient();
-        const instance = await getPersistenceCache().readGuildState(this.guildId);
+        const instance = await getPersistenceService().readGuildState(this.guildId);
         const prefix = this.generalSettings.prefix;
         const cmdNote = `${prefix}${client.intlGet(this.guildId, 'commandSyntaxNote')}`;
         const cmdNoteEn = `${prefix}${client.intlGet('en', 'commandSyntaxNote')}`;
@@ -1583,7 +1583,7 @@ export default class RustPlus extends RustPlusLib {
             let index = 0;
             while (Object.keys(instance.serverList[this.serverId].notes).map(Number).includes(index)) index++;
             instance.serverList[this.serverId].notes[index] = value;
-            await getPersistenceCache().upsertNote(this.guildId, this.serverId, index, value);
+            await getPersistenceService().upsertNote(this.guildId, this.serverId, index, value);
             return client.intlGet(this.guildId, 'noteSaved');
         } else if (
             subcommand.toLowerCase() === cmdRemove.toLowerCase() ||
@@ -1594,7 +1594,7 @@ export default class RustPlus extends RustPlusLib {
             if (!Object.keys(instance.serverList[this.serverId].notes).map(Number).includes(id))
                 return client.intlGet(this.guildId, 'noteIdDoesNotExist', { id });
             delete instance.serverList[this.serverId].notes[id];
-            await getPersistenceCache().deleteNote(this.guildId, this.serverId, id);
+            await getPersistenceService().deleteNote(this.guildId, this.serverId, id);
             return client.intlGet(this.guildId, 'noteIdWasRemoved', { id });
         }
         return null;
@@ -1618,7 +1618,7 @@ export default class RustPlus extends RustPlusLib {
 
     async getCommandPlayer(command: string): Promise<string | null> {
         const client = getClient();
-        const instance = await getPersistenceCache().readGuildState(this.guildId);
+        const instance = await getPersistenceService().readGuildState(this.guildId);
         const battlemetricsId = instance.serverList[this.serverId].battlemetricsId;
         const prefix = this.generalSettings.prefix;
         const cmdPlayer = `${prefix}${client.intlGet(this.guildId, 'commandSyntaxPlayer')}`;
@@ -1800,7 +1800,7 @@ export default class RustPlus extends RustPlusLib {
 
         if (!name || !message) return client.intlGet(this.guildId, 'missingArguments');
 
-        const credentials = await getPersistenceCache().getCredentials(this.guildId);
+        const credentials = await getPersistenceService().getCredentials(this.guildId);
         for (const player of this.team.players) {
             if (player.name.includes(name)) {
                 if (!(player.steamId in credentials))
@@ -2042,16 +2042,16 @@ export default class RustPlus extends RustPlusLib {
 
     async getCommandUnmute(): Promise<string> {
         const client = getClient();
-        const instance = await getPersistenceCache().readGuildState(this.guildId);
+        const instance = await getPersistenceService().readGuildState(this.guildId);
         instance.generalSettings.muteInGameBotMessages = false;
         this.generalSettings.muteInGameBotMessages = false;
-        await getPersistenceCache().setGeneralSetting(this.guildId, 'muteInGameBotMessages', false);
+        await getPersistenceService().setGeneralSetting(this.guildId, 'muteInGameBotMessages', false);
         return client.intlGet(this.guildId, 'inGameBotMessagesUnmuted');
     }
 
     async getCommandUpkeep(): Promise<any> {
         const client = getClient();
-        const instance = await getPersistenceCache().readGuildState(this.guildId);
+        const instance = await getPersistenceService().readGuildState(this.guildId);
         const strings: string[] = [];
         const upkeepStr = client.intlGet(this.guildId, 'upkeep').toLowerCase();
         for (const [key, value] of Object.entries(instance.serverList[this.serverId].storageMonitors) as [

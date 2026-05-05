@@ -5,7 +5,7 @@ import * as DiscordEmbeds from '../discordTools/discordEmbeds.js';
 import * as DiscordMessages from '../discordTools/discordMessages.js';
 import * as DiscordTools from '../discordTools/discordTools.js';
 import * as PermissionHandler from '../handlers/permissionHandler.js';
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 import type DiscordBot from '../structures/DiscordBot.js';
 
 export default {
@@ -46,7 +46,7 @@ export default {
     },
 
     async execute(client: DiscordBot, interaction: any) {
-        const instance = await getPersistenceCache().readGuildState(interaction.guildId);
+        const instance = await getPersistenceService().readGuildState(interaction.guildId);
 
         const verifyId = client.generateVerifyId();
         client.logInteraction(interaction, verifyId, 'slashCommand');

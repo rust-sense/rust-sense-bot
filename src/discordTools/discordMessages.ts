@@ -8,7 +8,7 @@ import * as DiscordEmbeds from './discordEmbeds.js';
 import * as DiscordSelectMenus from './discordSelectMenus.js';
 import * as DiscordTools from './discordTools.js';
 import * as Scrape from '../infrastructure/scrape.js';
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 
 export async function sendMessage(
     guildId: string,
@@ -43,7 +43,7 @@ export async function sendMessage(
 }
 
 export async function sendServerMessage(guildId: string, serverId: string, state: any = null, interaction: any = null) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const server = instance.serverList[serverId];
 
     const content = {
@@ -54,12 +54,12 @@ export async function sendServerMessage(guildId: string, serverId: string, state
     const message = await sendMessage(guildId, content, server.messageId, instance.channelId.servers, interaction);
 
     if (!interaction && message) {
-        await getPersistenceCache().setServerMessageId(guildId, serverId, message.id);
+        await getPersistenceService().setServerMessageId(guildId, serverId, message.id);
     }
 }
 
 export async function sendTrackerMessage(guildId: string, trackerId: string, interaction: any = null) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const tracker = instance.trackers[trackerId];
 
     const content = {
@@ -70,7 +70,7 @@ export async function sendTrackerMessage(guildId: string, trackerId: string, int
     const message = await sendMessage(guildId, content, tracker.messageId, instance.channelId.trackers, interaction);
 
     if (!interaction && message) {
-        await getPersistenceCache().setTrackerMessageId(guildId, trackerId, message.id);
+        await getPersistenceService().setTrackerMessageId(guildId, trackerId, message.id);
     }
 }
 
@@ -80,7 +80,7 @@ export async function sendSmartSwitchMessage(
     entityId: string,
     interaction: any = null,
 ) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const entity = instance.serverList[serverId].switches[entityId];
 
     const content = {
@@ -99,7 +99,7 @@ export async function sendSmartSwitchMessage(
     const message = await sendMessage(guildId, content, entity.messageId, instance.channelId.switches, interaction);
 
     if (!interaction && message) {
-        await getPersistenceCache().setSmartSwitchMessageId(guildId, serverId, entityId, message.id);
+        await getPersistenceService().setSmartSwitchMessageId(guildId, serverId, entityId, message.id);
     }
 }
 
@@ -109,7 +109,7 @@ export async function sendSmartAlarmMessage(
     entityId: string,
     interaction: any = null,
 ) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const entity = instance.serverList[serverId].alarms[entityId];
 
     const content = {
@@ -125,7 +125,7 @@ export async function sendSmartAlarmMessage(
     const message = await sendMessage(guildId, content, entity.messageId, instance.channelId.alarms, interaction);
 
     if (!interaction && message) {
-        await getPersistenceCache().setSmartAlarmMessageId(guildId, serverId, entityId, message.id);
+        await getPersistenceService().setSmartAlarmMessageId(guildId, serverId, entityId, message.id);
     }
 }
 
@@ -135,7 +135,7 @@ export async function sendStorageMonitorMessage(
     entityId: string,
     interaction: any = null,
 ) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const entity = instance.serverList[serverId].storageMonitors[entityId];
 
     const content = {
@@ -161,7 +161,7 @@ export async function sendStorageMonitorMessage(
     );
 
     if (!interaction && message) {
-        await getPersistenceCache().setStorageMonitorMessageId(guildId, serverId, entityId, message.id);
+        await getPersistenceService().setStorageMonitorMessageId(guildId, serverId, entityId, message.id);
     }
 }
 
@@ -171,7 +171,7 @@ export async function sendSmartSwitchGroupMessage(
     groupId: string,
     interaction: any = null,
 ) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const group = instance.serverList[serverId].switchGroups[groupId];
 
     const content = {
@@ -183,7 +183,7 @@ export async function sendSmartSwitchGroupMessage(
     const message = await sendMessage(guildId, content, group.messageId, instance.channelId.switchGroups, interaction);
 
     if (!interaction && message) {
-        await getPersistenceCache().setSmartSwitchGroupMessageId(guildId, serverId, groupId, message.id);
+        await getPersistenceService().setSmartSwitchGroupMessageId(guildId, serverId, groupId, message.id);
     }
 }
 
@@ -193,7 +193,7 @@ export async function sendStorageMonitorRecycleMessage(
     entityId: string,
     items: any,
 ) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
 
     const content = {
         embeds: [await DiscordEmbeds.getStorageMonitorRecycleEmbed(guildId, serverId, entityId, items)],
@@ -205,7 +205,7 @@ export async function sendStorageMonitorRecycleMessage(
 }
 
 export async function sendDecayingNotificationMessage(guildId: string, serverId: string, entityId: string) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const entity = instance.serverList[serverId].storageMonitors[entityId];
 
     const content: any = {
@@ -222,7 +222,7 @@ export async function sendStorageMonitorDisconnectNotificationMessage(
     serverId: string,
     entityId: string,
 ) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const entity = instance.serverList[serverId].storageMonitors[entityId];
 
     const content: any = {
@@ -235,7 +235,7 @@ export async function sendStorageMonitorDisconnectNotificationMessage(
 }
 
 export async function sendStorageMonitorNotFoundMessage(guildId: string, serverId: string, entityId: string) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const entity = instance.serverList[serverId].storageMonitors[entityId];
 
     const content: any = {
@@ -248,7 +248,7 @@ export async function sendStorageMonitorNotFoundMessage(guildId: string, serverI
 }
 
 export async function sendSmartSwitchNotFoundMessage(guildId: string, serverId: string, entityId: string) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const entity = instance.serverList[serverId].switches[entityId];
 
     const content = {
@@ -260,7 +260,7 @@ export async function sendSmartSwitchNotFoundMessage(guildId: string, serverId: 
 }
 
 export async function sendSmartAlarmNotFoundMessage(guildId: string, serverId: string, entityId: string) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const entity = instance.serverList[serverId].alarms[entityId];
 
     const content: any = {
@@ -273,7 +273,7 @@ export async function sendSmartAlarmNotFoundMessage(guildId: string, serverId: s
 }
 
 export async function sendSmartAlarmTriggerMessage(guildId: string, serverId: string, entityId: string) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const entity = instance.serverList[serverId].alarms[entityId];
 
     const content: any = {
@@ -286,7 +286,7 @@ export async function sendSmartAlarmTriggerMessage(guildId: string, serverId: st
 }
 
 export async function sendServerChangeStateMessage(guildId: string, serverId: string, state: any) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
 
     const content = {
         embeds: [await DiscordEmbeds.getServerChangedStateEmbed(guildId, serverId, state)],
@@ -296,7 +296,7 @@ export async function sendServerChangeStateMessage(guildId: string, serverId: st
 }
 
 export async function sendServerWipeDetectedMessage(guildId: string, serverId: string) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
 
     const content: any = {
         embeds: [await DiscordEmbeds.getServerWipeDetectedEmbed(guildId, serverId)],
@@ -308,7 +308,7 @@ export async function sendServerWipeDetectedMessage(guildId: string, serverId: s
 }
 
 export async function sendServerConnectionInvalidMessage(guildId: string, serverId: string) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
 
     const content = {
         embeds: [await DiscordEmbeds.getServerConnectionInvalidEmbed(guildId, serverId)],
@@ -318,7 +318,7 @@ export async function sendServerConnectionInvalidMessage(guildId: string, server
 }
 
 export async function sendInformationMapMessage(guildId: string) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
 
     const content = {
         files: [new Discord.AttachmentBuilder(cwdPath(`maps/${guildId}_map_full.png`))],
@@ -332,7 +332,7 @@ export async function sendInformationMapMessage(guildId: string) {
     );
 
     if (message) {
-        await getPersistenceCache().setDiscordReferencedIds(guildId, [
+        await getPersistenceService().setDiscordReferencedIds(guildId, [
             { key: 'informationMessage.map', value: message.id },
         ]);
     }
@@ -345,7 +345,7 @@ export async function sendDiscordEventMessage(
     image: string,
     color: string,
 ) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
 
     const content = {
         embeds: [await DiscordEmbeds.getEventEmbed(guildId, serverId, text, image, color)],
@@ -364,7 +364,7 @@ export async function sendActivityNotificationMessage(
     title: string | null = null,
     everyone: boolean = false,
 ) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
 
     let png = null;
     if (steamId !== null) {
@@ -382,7 +382,7 @@ export async function sendActivityNotificationMessage(
 }
 
 export async function sendTeamChatMessage(guildId: string, message: any) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
 
     let color = Constants.COLOR_TEAMCHAT_DEFAULT;
     if (Object.hasOwn(instance.teamChatColors, message.steamId)) {
@@ -406,7 +406,7 @@ export async function sendTeamChatMessage(guildId: string, message: any) {
 }
 
 export async function sendTTSMessage(guildId: string, name: string, text: string) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
 
     const content: any = {
         content: client.intlGet(guildId, 'userSaid', { user: name, text: text }),
@@ -417,7 +417,7 @@ export async function sendTTSMessage(guildId: string, name: string, text: string
 }
 
 export async function sendUpdateMapInformationMessage(rustplus: any) {
-    const instance = await getPersistenceCache().readGuildState(rustplus.guildId);
+    const instance = await getPersistenceService().readGuildState(rustplus.guildId);
 
     const content = {
         files: [new Discord.AttachmentBuilder(cwdPath(`maps/${rustplus.guildId}_map_full.png`))],
@@ -431,14 +431,14 @@ export async function sendUpdateMapInformationMessage(rustplus: any) {
     );
 
     if (message && message.id !== instance.informationMessageId.map) {
-        await getPersistenceCache().setDiscordReferencedIds(rustplus.guildId, [
+        await getPersistenceService().setDiscordReferencedIds(rustplus.guildId, [
             { key: 'informationMessage.map', value: message.id },
         ]);
     }
 }
 
 export async function sendUpdateServerInformationMessage(rustplus: any) {
-    const instance = await getPersistenceCache().readGuildState(rustplus.guildId);
+    const instance = await getPersistenceService().readGuildState(rustplus.guildId);
 
     const content = {
         embeds: [await DiscordEmbeds.getUpdateServerInformationEmbed(rustplus)],
@@ -453,14 +453,14 @@ export async function sendUpdateServerInformationMessage(rustplus: any) {
     );
 
     if (message && message.id !== instance.informationMessageId.server) {
-        await getPersistenceCache().setDiscordReferencedIds(rustplus.guildId, [
+        await getPersistenceService().setDiscordReferencedIds(rustplus.guildId, [
             { key: 'informationMessage.server', value: message.id },
         ]);
     }
 }
 
 export async function sendUpdateEventInformationMessage(rustplus: any) {
-    const instance = await getPersistenceCache().readGuildState(rustplus.guildId);
+    const instance = await getPersistenceService().readGuildState(rustplus.guildId);
 
     const content = {
         embeds: [await DiscordEmbeds.getUpdateEventInformationEmbed(rustplus)],
@@ -475,14 +475,14 @@ export async function sendUpdateEventInformationMessage(rustplus: any) {
     );
 
     if (message && message.id !== instance.informationMessageId.event) {
-        await getPersistenceCache().setDiscordReferencedIds(rustplus.guildId, [
+        await getPersistenceService().setDiscordReferencedIds(rustplus.guildId, [
             { key: 'informationMessage.event', value: message.id },
         ]);
     }
 }
 
 export async function sendUpdateTeamInformationMessage(rustplus: any) {
-    const instance = await getPersistenceCache().readGuildState(rustplus.guildId);
+    const instance = await getPersistenceService().readGuildState(rustplus.guildId);
 
     const content = {
         embeds: [await DiscordEmbeds.getUpdateTeamInformationEmbed(rustplus)],
@@ -497,14 +497,14 @@ export async function sendUpdateTeamInformationMessage(rustplus: any) {
     );
 
     if (message && message.id !== instance.informationMessageId.team) {
-        await getPersistenceCache().setDiscordReferencedIds(rustplus.guildId, [
+        await getPersistenceService().setDiscordReferencedIds(rustplus.guildId, [
             { key: 'informationMessage.team', value: message.id },
         ]);
     }
 }
 
 export async function sendUpdateBattlemetricsOnlinePlayersInformationMessage(rustplus: any, battlemetricsId: string) {
-    const instance = await getPersistenceCache().readGuildState(rustplus.guildId);
+    const instance = await getPersistenceService().readGuildState(rustplus.guildId);
 
     const content = {
         embeds: [DiscordEmbeds.getUpdateBattlemetricsOnlinePlayersInformationEmbed(rustplus, battlemetricsId)],
@@ -518,7 +518,7 @@ export async function sendUpdateBattlemetricsOnlinePlayersInformationMessage(rus
     );
 
     if (message && message.id !== instance.informationMessageId.battlemetricsPlayers) {
-        await getPersistenceCache().setDiscordReferencedIds(rustplus.guildId, [
+        await getPersistenceService().setDiscordReferencedIds(rustplus.guildId, [
             { key: 'informationMessage.battlemetricsPlayers', value: message.id },
         ]);
     }
@@ -547,7 +547,7 @@ export async function sendCredentialsShowMessage(interaction: any) {
 }
 
 export async function sendItemAvailableInVendingMachineMessage(rustplus: any, str: string) {
-    const instance = await getPersistenceCache().readGuildState(rustplus.guildId);
+    const instance = await getPersistenceService().readGuildState(rustplus.guildId);
 
     const content = {
         embeds: [await DiscordEmbeds.getItemAvailableVendingMachineEmbed(rustplus.guildId, rustplus.serverId, str)],
@@ -633,7 +633,7 @@ export async function sendBattlemetricsEventMessage(
     fields: any = null,
     everyone: boolean = false,
 ) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
 
     const content: any = {
         embeds: [await DiscordEmbeds.getBattlemetricsEventEmbed(guildId, battlemetricsId, title, description, fields)],

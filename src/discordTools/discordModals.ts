@@ -1,7 +1,7 @@
 import { ActionRowBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } from 'discord.js';
 
 import { client } from '../index.js';
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 import * as TextInput from './discordTextInputs.js';
 
 interface ModalOptions {
@@ -19,7 +19,7 @@ export function getModal(options: ModalOptions = {}) {
 }
 
 export async function getServerEditModal(guildId: string, serverId: string) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const server = instance.serverList[serverId];
     const identifier = JSON.stringify({ serverId: serverId });
 
@@ -45,7 +45,7 @@ export async function getServerEditModal(guildId: string, serverId: string) {
 }
 
 export async function getCustomTimersEditModal(guildId: string, serverId: string) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const server = instance.serverList[serverId];
     const identifier = JSON.stringify({ serverId: serverId });
 
@@ -101,7 +101,7 @@ export async function getCustomTimersEditModal(guildId: string, serverId: string
 }
 
 export async function getSmartSwitchEditModal(guildId: string, serverId: string, entityId: string) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const entity = instance.serverList[serverId].switches[entityId];
     const identifier = JSON.stringify({ serverId: serverId, entityId: entityId });
 
@@ -148,7 +148,7 @@ export async function getSmartSwitchEditModal(guildId: string, serverId: string,
 }
 
 export async function getGroupEditModal(guildId: string, serverId: string, groupId: string) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const group = instance.serverList[serverId].switchGroups[groupId];
     const identifier = JSON.stringify({ serverId: serverId, groupId: groupId });
 
@@ -182,7 +182,7 @@ export async function getGroupEditModal(guildId: string, serverId: string, group
 }
 
 export async function getGroupAddSwitchModal(guildId: string, serverId: string, groupId: string) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const group = instance.serverList[serverId].switchGroups[groupId];
     const identifier = JSON.stringify({ serverId: serverId, groupId: groupId });
 
@@ -206,7 +206,7 @@ export async function getGroupAddSwitchModal(guildId: string, serverId: string, 
 }
 
 export async function getGroupRemoveSwitchModal(guildId: string, serverId: string, groupId: string) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const group = instance.serverList[serverId].switchGroups[groupId];
     const identifier = JSON.stringify({ serverId: serverId, groupId: groupId });
 
@@ -230,7 +230,7 @@ export async function getGroupRemoveSwitchModal(guildId: string, serverId: strin
 }
 
 export async function getSmartAlarmEditModal(guildId: string, serverId: string, entityId: string) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const entity = instance.serverList[serverId].alarms[entityId];
     const identifier = JSON.stringify({ serverId: serverId, entityId: entityId });
 
@@ -272,7 +272,7 @@ export async function getSmartAlarmEditModal(guildId: string, serverId: string, 
 }
 
 export async function getStorageMonitorEditModal(guildId: string, serverId: string, entityId: string) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const entity = instance.serverList[serverId].storageMonitors[entityId];
     const identifier = JSON.stringify({ serverId: serverId, entityId: entityId });
 
@@ -298,7 +298,7 @@ export async function getStorageMonitorEditModal(guildId: string, serverId: stri
 }
 
 export async function getTrackerEditModal(guildId: string, trackerId: string) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const tracker = instance.trackers[trackerId];
     const identifier = JSON.stringify({ trackerId: trackerId });
 
@@ -342,7 +342,7 @@ export async function getTrackerEditModal(guildId: string, trackerId: string) {
 }
 
 export async function getTrackerAddPlayerModal(guildId: string, trackerId: string) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const tracker = instance.trackers[trackerId];
     const identifier = JSON.stringify({ trackerId: trackerId });
 
@@ -366,7 +366,7 @@ export async function getTrackerAddPlayerModal(guildId: string, trackerId: strin
 }
 
 export async function getTrackerRemovePlayerModal(guildId: string, trackerId: string) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const tracker = instance.trackers[trackerId];
     const identifier = JSON.stringify({ trackerId: trackerId });
 

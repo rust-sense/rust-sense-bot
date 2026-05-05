@@ -1,10 +1,10 @@
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 import type { DiscordBot } from '../types/discord.js';
 import * as DiscordMessages from './discordMessages.js';
 import * as DiscordTools from './discordTools.js';
 
 export default async function setupSwitchGroups(client: DiscordBot, rustplus: any) {
-    const instance = await getPersistenceCache().readGuildState(rustplus.guildId);
+    const instance = await getPersistenceService().readGuildState(rustplus.guildId);
     const guildId = rustplus.guildId;
 
     if (rustplus.isNewConnection) {

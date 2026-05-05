@@ -2,7 +2,7 @@ import { SlashCommandBuilder } from '@discordjs/builders';
 import { MessageFlags } from 'discord.js';
 import * as DiscordEmbeds from '../discordTools/discordEmbeds.js';
 import * as Constants from '../domain/constants.js';
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 import type DiscordBot from '../structures/DiscordBot.js';
 
 export default {
@@ -92,7 +92,7 @@ export default {
 
 async function addAlias(client: DiscordBot, interaction: any) {
     const guildId = interaction.guildId;
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
 
     const aliasParameter = interaction.options.getString('alias');
     const valueParameter = interaction.options.getString('value');
@@ -118,7 +118,7 @@ async function addAlias(client: DiscordBot, interaction: any) {
         value: valueParameter,
     };
     instance.aliases.push(alias);
-    await getPersistenceCache().upsertAlias(guildId, alias);
+    await getPersistenceService().upsertAlias(guildId, alias);
 
     const str = client.intlGet(guildId, 'aliasWasAdded');
     await client.interactionEditReply(interaction, DiscordEmbeds.getActionInfoEmbed(0, str));
@@ -128,7 +128,7 @@ async function addAlias(client: DiscordBot, interaction: any) {
 
 async function removeAlias(client: DiscordBot, interaction: any) {
     const guildId = interaction.guildId;
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
 
     const indexParameter = interaction.options.getInteger('index');
 
@@ -140,7 +140,7 @@ async function removeAlias(client: DiscordBot, interaction: any) {
     }
 
     instance.aliases = instance.aliases.filter((e: any) => e.index !== indexParameter);
-    await getPersistenceCache().deleteAlias(guildId, indexParameter);
+    await getPersistenceService().deleteAlias(guildId, indexParameter);
 
     const str = client.intlGet(guildId, 'aliasWasRemoved');
     await client.interactionEditReply(interaction, DiscordEmbeds.getActionInfoEmbed(0, str));
@@ -150,7 +150,7 @@ async function removeAlias(client: DiscordBot, interaction: any) {
 
 async function showAlias(client: DiscordBot, interaction: any) {
     const guildId = interaction.guildId;
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
 
     const title = client.intlGet(guildId, 'aliases');
     const indexFieldName = client.intlGet(guildId, 'index');

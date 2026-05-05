@@ -3,7 +3,7 @@ import { MessageFlags } from 'discord.js';
 
 import * as DiscordEmbeds from '../discordTools/discordEmbeds.js';
 import * as DiscordMessages from '../discordTools/discordMessages.js';
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 import { getSmartDevice } from '../services/smartDevice.js';
 import type DiscordBot from '../structures/DiscordBot.js';
 
@@ -101,7 +101,7 @@ export default {
 
     async execute(client: DiscordBot, interaction: any) {
         const guildId = interaction.guildId;
-        const instance = await getPersistenceCache().readGuildState(guildId);
+        const instance = await getPersistenceService().readGuildState(guildId);
         const rustplus = client.rustplusInstances[guildId];
 
         const verifyId = client.generateVerifyId();
@@ -150,7 +150,7 @@ export default {
                     if (image !== null) {
                         if (isSmartSwitchGroup) {
                             instance.serverList[device.serverId].switchGroups[entityId].image = `${image}.png`;
-                            await getPersistenceCache().updateSmartSwitchGroupFields(
+                            await getPersistenceService().updateSmartSwitchGroupFields(
                                 guildId,
                                 device.serverId,
                                 entityId,
@@ -160,7 +160,7 @@ export default {
                             );
                         } else {
                             instance.serverList[device.serverId].switches[entityId].image = `${image}.png`;
-                            await getPersistenceCache().updateSmartSwitchFields(guildId, device.serverId, entityId, {
+                            await getPersistenceService().updateSmartSwitchFields(guildId, device.serverId, entityId, {
                                 image: `${image}.png`,
                             });
                         }

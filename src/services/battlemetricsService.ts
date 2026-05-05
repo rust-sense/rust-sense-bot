@@ -2,7 +2,7 @@ import * as DiscordMessages from '../discordTools/discordMessages.js';
 import * as DiscordTools from '../discordTools/discordTools.js';
 import * as Constants from '../domain/constants.js';
 import * as Scrape from '../infrastructure/scrape.js';
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 import type DiscordBot from '../structures/DiscordBot.js';
 
 export async function syncBattlemetrics(client: DiscordBot, firstTime = false) {
@@ -13,7 +13,7 @@ export async function syncBattlemetrics(client: DiscordBot, firstTime = false) {
 
     for (const guildItem of client.guilds.cache) {
         const guildId = guildItem[0];
-        const instance = await getPersistenceCache().readGuildState(guildId);
+        const instance = await getPersistenceService().readGuildState(guildId);
         const rustplus = client.rustplusInstances[guildId];
 
         if (!firstTime) await handleBattlemetricsChanges(client, guildId);
@@ -37,7 +37,7 @@ export async function syncBattlemetrics(client: DiscordBot, firstTime = false) {
                 );
 
                 instance.informationMessageId.battlemetricsPlayers = null;
-                await getPersistenceCache().setDiscordReferencedIds(guildId, [
+                await getPersistenceService().setDiscordReferencedIds(guildId, [
                     { key: 'informationMessage.battlemetricsPlayers', value: null },
                 ]);
             }
@@ -76,7 +76,7 @@ export async function syncBattlemetrics(client: DiscordBot, firstTime = false) {
                     }
                 }
 
-                await getPersistenceCache().replaceTrackerPlayers(guildId, trackerId, content.players);
+                await getPersistenceService().replaceTrackerPlayers(guildId, trackerId, content.players);
 
                 if (firstTime) {
                     await DiscordMessages.sendTrackerMessage(guildId, trackerId);
@@ -180,7 +180,7 @@ export async function syncBattlemetrics(client: DiscordBot, firstTime = false) {
 }
 
 export async function handleBattlemetricsChanges(client: DiscordBot, guildId: string) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const settings = instance.generalSettings;
 
     const activeServer = instance.activeServer;
@@ -449,7 +449,7 @@ export async function trackerNewNameDetected(
     oldName: string,
     newName: string,
 ) {
-    const instance = await getPersistenceCache().readGuildState(guildId);
+    const instance = await getPersistenceService().readGuildState(guildId);
     const trackerName = instance.trackers[trackerId].name;
 
     const title = client.intlGet(guildId, 'battlemetricsTrackerPlayerNameChanged');

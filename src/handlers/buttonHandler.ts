@@ -7,12 +7,12 @@ import * as DiscordButtons from '../discordTools/discordButtons.js';
 import * as DiscordModals from '../discordTools/discordModals.js';
 import * as DiscordFormattingUtils from '../discordTools/discordFormattingUtils.js';
 import * as Utils from '../discordTools/discordInteractionUtils.js';
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 import type { ServerPatch } from '../persistence/types.js';
 import type { Instance, Server } from '../types/instance.js';
 
 async function persistTargetedButtonState(guildId: string, base: Instance, next: Instance): Promise<void> {
-    const persistence = getPersistenceCache();
+    const persistence = getPersistenceService();
 
     if (
         !sameJson(base.generalSettings, next.generalSettings) ||
@@ -67,7 +67,7 @@ async function persistServerDiff(
     baseServer: Server,
     nextServer: Server,
 ): Promise<void> {
-    const persistence = getPersistenceCache();
+    const persistence = getPersistenceService();
     const baseScalars = serverScalarSnapshot(baseServer);
     const nextScalars = serverScalarSnapshot(nextServer);
     if (!sameJson(baseScalars, nextScalars)) {
@@ -132,7 +132,7 @@ function unionKeys<T extends object>(left: T | undefined, right: T | undefined):
 }
 
 export default async (client: DiscordBot, interaction: any) => {
-    const instance = await getPersistenceCache().readGuildState(interaction.guildId);
+    const instance = await getPersistenceService().readGuildState(interaction.guildId);
     let persistedSnapshot = structuredClone(instance);
     const persistButtonState = async () => {
         await persistTargetedButtonState(interaction.guildId, persistedSnapshot, instance);

@@ -1,4 +1,4 @@
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 import type { DiscordBot } from '../types/discord.js';
 
 export default {
@@ -7,7 +7,7 @@ export default {
         const guildId = member.guild.id;
         const userId = member.user.id;
 
-        const credentials = await getPersistenceCache().getCredentials(guildId);
+        const credentials = await getPersistenceService().getCredentials(guildId);
 
         const steamId = Object.keys(credentials).find(
             (e) => credentials[e] && credentials[e].discord_user_id === userId,
@@ -29,6 +29,6 @@ export default {
         }
 
         delete credentials[steamId];
-        await getPersistenceCache().setCredentials(guildId, credentials);
+        await getPersistenceService().setCredentials(guildId, credentials);
     },
 };

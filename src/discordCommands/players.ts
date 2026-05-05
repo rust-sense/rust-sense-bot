@@ -3,7 +3,7 @@ import { MessageFlags } from 'discord.js';
 import * as DiscordEmbeds from '../discordTools/discordEmbeds.js';
 import * as DiscordTools from '../discordTools/discordTools.js';
 import * as Constants from '../domain/constants.js';
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 import type DiscordBot from '../structures/DiscordBot.js';
 
 export default {
@@ -87,7 +87,7 @@ export default {
                 return;
             }
 
-            const instance = await getPersistenceCache().readGuildState(interaction.guildId);
+            const instance = await getPersistenceService().readGuildState(interaction.guildId);
             const server = instance.serverList[rustplus.serverId];
             if (!server || (server && !server.battlemetricsId)) {
                 const str = client.intlGet(interaction.guildId, 'invalidBattlemetricsId');

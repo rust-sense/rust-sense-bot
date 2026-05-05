@@ -10,7 +10,7 @@ import * as DiscordEmbeds from '../discordTools/discordEmbeds.js';
 import * as DiscordTools from '../discordTools/discordTools.js';
 import * as Constants from '../domain/constants.js';
 import * as PermissionHandler from '../handlers/permissionHandler.js';
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 import Battlemetrics from '../structures/Battlemetrics.js';
 import RustLabs from '../structures/RustLabs.js';
 import RustPlus from '../structures/RustPlus.js';
@@ -141,7 +141,7 @@ export default class DiscordBot extends Discord.Client {
     async loadGuildsIntlFromCache(): Promise<void> {
         for (const guild of this.guilds.cache) {
             const guildId = guild[0];
-            const instance = await getPersistenceCache().readGuildState(guildId);
+            const instance = await getPersistenceService().readGuildState(guildId);
             this.loadGuildIntl(guildId, instance);
         }
     }
@@ -235,7 +235,7 @@ export default class DiscordBot extends Discord.Client {
     }
 
     async setupGuild(guild: any): Promise<void> {
-        const instance = await getPersistenceCache().readGuildState(guild.id);
+        const instance = await getPersistenceService().readGuildState(guild.id);
         const firstTime = instance.firstTime;
 
         const registerSlashCommands = (await import('../discordTools/RegisterSlashCommands.js')).default;
@@ -261,7 +261,7 @@ export default class DiscordBot extends Discord.Client {
         const FcmListener = (await import('../infrastructure/FcmListener.js')).default;
         FcmListener(this, guild);
 
-        const credentials = await getPersistenceCache().getCredentials(guild.id);
+        const credentials = await getPersistenceService().getCredentials(guild.id);
         for (const steamId of Object.keys(credentials)) {
             if (steamId !== credentials.hoster && steamId !== 'hoster') {
                 FcmListener(this, guild, steamId);
@@ -277,7 +277,7 @@ export default class DiscordBot extends Discord.Client {
     }
 
     async syncCredentialsWithUsers(guild: any): Promise<void> {
-        const credentials = await getPersistenceCache().getCredentials(guild.id);
+        const credentials = await getPersistenceService().getCredentials(guild.id);
 
         const members = await guild.members.fetch();
         const memberIds: string[] = [];
@@ -315,7 +315,7 @@ export default class DiscordBot extends Discord.Client {
             delete credentials[steamId];
         }
 
-        await getPersistenceCache().setCredentials(guild.id, credentials);
+        await getPersistenceService().setCredentials(guild.id, credentials);
     }
 
     createRustplusInstance(
@@ -337,8 +337,8 @@ export default class DiscordBot extends Discord.Client {
     }
 
     async createRustplusInstancesFromConfig(): Promise<void> {
-        for (const guildId of await getPersistenceCache().listGuildIds()) {
-            const instance = await getPersistenceCache().readGuildState(guildId);
+        for (const guildId of await getPersistenceService().listGuildIds()) {
+            const instance = await getPersistenceService().readGuildState(guildId);
             if (!instance) {
                 continue;
             }
@@ -386,7 +386,7 @@ export default class DiscordBot extends Discord.Client {
         }
         delete this.voiceLeaveTimeouts[guildId];
 
-        await getPersistenceCache().deleteGuild(guildId);
+        await getPersistenceService().deleteGuild(guildId);
     }
 
     resetRustplusVariables(guildId: string): void {
@@ -410,7 +410,7 @@ export default class DiscordBot extends Discord.Client {
     }
 
     async findAvailableTrackerId(guildId: string): Promise<number> {
-        const instance = await getPersistenceCache().readGuildState(guildId);
+        const instance = await getPersistenceService().readGuildState(guildId);
 
         while (true) {
             const randomNumber = Math.floor(Math.random() * 1000);
@@ -421,7 +421,7 @@ export default class DiscordBot extends Discord.Client {
     }
 
     async findAvailableGroupId(guildId: string, serverId: string): Promise<number> {
-        const instance = await getPersistenceCache().readGuildState(guildId);
+        const instance = await getPersistenceService().readGuildState(guildId);
 
         while (true) {
             const randomNumber = Math.floor(Math.random() * 1000);
@@ -440,7 +440,7 @@ export default class DiscordBot extends Discord.Client {
         /* Check for instances that are missing or need update. */
         for (const guild of this.guilds.cache) {
             const guildId = guild[0];
-            const instance = await getPersistenceCache().readGuildState(guildId);
+            const instance = await getPersistenceService().readGuildState(guildId);
             const activeServer = instance.activeServer;
             if (activeServer !== null && Object.hasOwn(instance.serverList, activeServer)) {
                 if (instance.serverList[activeServer].battlemetricsId !== null) {
@@ -469,7 +469,7 @@ export default class DiscordBot extends Discord.Client {
                     if (bmInstance.lastUpdateSuccessful) {
                         /* Found an Id, is it a new Id? */
                         instance.serverList[activeServer].battlemetricsId = bmInstance.id;
-                        await getPersistenceCache().updateServerFields(guildId, activeServer, {
+                        await getPersistenceService().updateServerFields(guildId, activeServer, {
                             battlemetricsId: bmInstance.id,
                         });
 
@@ -621,7 +621,7 @@ export default class DiscordBot extends Discord.Client {
     }
 
     async validatePermissions(interaction: any): Promise<boolean> {
-        const instance = await getPersistenceCache().readGuildState(interaction.guildId);
+        const instance = await getPersistenceService().readGuildState(interaction.guildId);
 
         // If user is blacklisted, admin or not, deny the interaction
         if (instance.blacklist['discordIds'].includes(interaction.user.id)) {
@@ -646,7 +646,7 @@ export default class DiscordBot extends Discord.Client {
     }
 
     async isAdministrator(interaction: any): Promise<boolean> {
-        const instance = await getPersistenceCache().readGuildState(interaction.guildId);
+        const instance = await getPersistenceService().readGuildState(interaction.guildId);
 
         if (interaction.member.permissions.has(Discord.PermissionFlagsBits.Administrator)) {
             return true;

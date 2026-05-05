@@ -1,7 +1,7 @@
 import * as Constants from '../domain/constants.js';
 import * as GameMap from '../domain/GameMap.js';
 import * as Timer from '../domain/timer.js';
-import { getPersistenceCache } from '../persistence/index.js';
+import { getPersistenceService } from '../persistence/index.js';
 
 interface Monument {
     token?: string;
@@ -286,7 +286,7 @@ export default class MapMarkers {
 
     async isVendingMachineBlacklisted(marker: Marker): Promise<boolean> {
         if (marker.type !== this.types.VendingMachine) return false;
-        const instance = await getPersistenceCache().readGuildState(this.rustplus.guildId);
+        const instance = await getPersistenceService().readGuildState(this.rustplus.guildId);
         return instance.marketBlacklist.some((b) => marker.name?.toLowerCase().includes(b.toLowerCase()));
     }
 
@@ -440,7 +440,7 @@ export default class MapMarkers {
 
                         if (this.crateSmallOilRigTimer) this.crateSmallOilRigTimer.stop();
 
-                        const instance = await getPersistenceCache().readGuildState(this.rustplus.guildId);
+                        const instance = await getPersistenceService().readGuildState(this.rustplus.guildId);
                         this.crateSmallOilRigTimer = new Timer.Timer(
                             this.notifyCrateSmallOilRigOpen.bind(this),
                             instance.serverList[this.rustplus.serverId].oilRigLockedCrateUnlockTimeMs,
@@ -478,7 +478,7 @@ export default class MapMarkers {
 
                         if (this.crateLargeOilRigTimer) this.crateLargeOilRigTimer.stop();
 
-                        const instance = await getPersistenceCache().readGuildState(this.rustplus.guildId);
+                        const instance = await getPersistenceService().readGuildState(this.rustplus.guildId);
                         this.crateLargeOilRigTimer = new Timer.Timer(
                             this.notifyCrateLargeOilRigOpen.bind(this),
                             instance.serverList[this.rustplus.serverId].oilRigLockedCrateUnlockTimeMs,
@@ -556,7 +556,7 @@ export default class MapMarkers {
                     'cargo',
                     Constants.COLOR_CARGO_SHIP_ENTERS_MAP,
                 );
-                const instance = await getPersistenceCache().readGuildState(this.rustplus.guildId);
+                const instance = await getPersistenceService().readGuildState(this.rustplus.guildId);
                 this.cargoShipEgressTimers[marker.id] = new Timer.Timer(
                     this.notifyCargoShipEgress.bind(this),
                     instance.serverList[this.rustplus.serverId].cargoShipEgressTimeMs,
