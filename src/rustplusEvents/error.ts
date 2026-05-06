@@ -1,79 +1,67 @@
 import * as DiscordMessages from '../discordTools/discordMessages.js';
+import type RustPlus from '../structures/RustPlus.js';
+import type { RustPlusEventServices } from '../types/rustplusEvents.js';
 
 export default {
     name: 'error',
-    async execute(rustplus: any, client: any, err: any) {
+    async execute(rustplus: RustPlus, services: RustPlusEventServices, err: any) {
         if (!rustplus.isServerAvailable()) return rustplus.deleteThisRustplusInstance();
 
-        rustplus.log(client.intlGet(null, 'errorCap'), err, 'error');
+        rustplus.log(services.localizationService.intlGet(null, 'errorCap'), err, 'error');
 
         switch (err.code) {
             case 'ETIMEDOUT':
-                {
-                    errorTimedOut(rustplus, client, err);
-                }
+                errorTimedOut(rustplus, services, err);
                 break;
 
             case 'ENOTFOUND':
-                {
-                    errorNotFound(rustplus, client, err);
-                }
+                errorNotFound(rustplus, services, err);
                 break;
 
             case 'ECONNREFUSED':
-                {
-                    await errorConnRefused(rustplus, client, err);
-                }
+                await errorConnRefused(rustplus, services, err);
                 break;
 
             default:
-                {
-                    errorOther(rustplus, client, err);
-                }
+                errorOther(rustplus, services, err);
                 break;
         }
     },
 };
 
-function errorTimedOut(rustplus: any, client: any, err: any) {
+function errorTimedOut(rustplus: RustPlus, services: RustPlusEventServices, err: any) {
     if (err.syscall === 'connect') {
         rustplus.log(
-            client.intlGet(null, 'errorCap'),
-            client.intlGet(null, 'couldNotConnectTo', {
-                id: rustplus.serverId,
-            }),
+            services.localizationService.intlGet(null, 'errorCap'),
+            services.localizationService.intlGet(null, 'couldNotConnectTo', { id: rustplus.serverId }),
             'error',
         );
     }
 }
 
-function errorNotFound(rustplus: any, client: any, err: any) {
+function errorNotFound(rustplus: RustPlus, services: RustPlusEventServices, err: any) {
     if (err.syscall === 'getaddrinfo') {
         rustplus.log(
-            client.intlGet(null, 'errorCap'),
-            client.intlGet(null, 'couldNotConnectTo', {
-                id: rustplus.serverId,
-            }),
+            services.localizationService.intlGet(null, 'errorCap'),
+            services.localizationService.intlGet(null, 'couldNotConnectTo', { id: rustplus.serverId }),
             'error',
         );
     }
 }
 
-async function errorConnRefused(rustplus: any, client: any, err: any) {
+async function errorConnRefused(rustplus: RustPlus, services: RustPlusEventServices, err: any) {
     rustplus.log(
-        client.intlGet(null, 'errorCap'),
-        client.intlGet(null, 'connectionRefusedTo', {
-            id: rustplus.serverId,
-        }),
+        services.localizationService.intlGet(null, 'errorCap'),
+        services.localizationService.intlGet(null, 'connectionRefusedTo', { id: rustplus.serverId }),
         'error',
     );
 }
 
-function errorOther(rustplus: any, client: any, err: any) {
+function errorOther(rustplus: RustPlus, services: RustPlusEventServices, err: any) {
     if (err.toString() === 'Error: WebSocket was closed before the connection was established') {
         rustplus.log(
-            client.intlGet(null, 'errorCap'),
-            client.intlGet(null, 'websocketClosedBeforeConnection'),
+            services.localizationService.intlGet(null, 'errorCap'),
+            services.localizationService.intlGet(null, 'websocketClosedBeforeConnection'),
             'error',
         );
     }

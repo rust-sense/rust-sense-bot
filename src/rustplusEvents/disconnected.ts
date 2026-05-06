@@ -1,22 +1,27 @@
 import config from '../config.js';
 import * as DiscordMessages from '../discordTools/discordMessages.js';
+import type RustPlus from '../structures/RustPlus.js';
+import type { RustPlusEventServices } from '../types/rustplusEvents.js';
 
 export default {
     name: 'disconnected',
-    async execute(rustplus: any, client: any) {
+    async execute(rustplus: RustPlus, services: RustPlusEventServices) {
         if (!rustplus.isServerAvailable() && !rustplus.isDeleted) {
             rustplus.deleteThisRustplusInstance();
         }
 
-        rustplus.log(client.intlGet(null, 'disconnectedCap'), client.intlGet(null, 'disconnectedFromServer'));
+        rustplus.log(
+            services.localizationService.intlGet(null, 'disconnectedCap'),
+            services.localizationService.intlGet(null, 'disconnectedFromServer'),
+        );
 
         const guildId = rustplus.guildId;
         const serverId = rustplus.serverId;
 
         if (rustplus.leaderRustPlusInstance !== null) {
-            if (client.rustplusLiteReconnectTimers[guildId]) {
-                clearTimeout(client.rustplusLiteReconnectTimers[guildId]);
-                client.rustplusLiteReconnectTimers[guildId] = null;
+            if (services.manager.rustplusLiteReconnectTimers[guildId]) {
+                clearTimeout(services.manager.rustplusLiteReconnectTimers[guildId]);
+                services.manager.rustplusLiteReconnectTimers[guildId] = null;
             }
             rustplus.leaderRustPlusInstance.isActive = false;
             rustplus.leaderRustPlusInstance.removeAllListeners();
@@ -33,37 +38,37 @@ export default {
         if (rustplus.mapMarkers) rustplus.mapMarkers.reset();
 
         /* Stop all custom timers */
-        for (const [id, timer] of Object.entries(rustplus.timers as Record<string, { timer: { stop: () => void } }>))
+        for (const [, timer] of Object.entries(rustplus.timers as Record<string, { timer: { stop: () => void } }>))
             timer.timer.stop();
 
         if (rustplus.isDeleted) return;
 
         /* Was the disconnection unexpected? */
-        if (client.activeRustplusInstances[guildId]) {
-            if (!client.rustplusReconnecting[guildId]) {
+        if (services.manager.activeRustplusInstances[guildId]) {
+            if (!services.manager.rustplusReconnecting[guildId]) {
                 await DiscordMessages.sendServerChangeStateMessage(guildId, serverId, 1);
                 await DiscordMessages.sendServerMessage(guildId, serverId, 2);
             }
 
-            client.rustplusReconnecting[guildId] = true;
+            services.manager.rustplusReconnecting[guildId] = true;
 
             const attempt = ++rustplus._reconnectAttempts;
             const delay = Math.min(config.general.reconnectIntervalMs * Math.pow(2, attempt - 1), 300000);
 
             rustplus.log(
-                client.intlGet(null, 'reconnectingCap'),
-                `${client.intlGet(null, 'reconnectingToServer')} (attempt ${attempt}, delay ${delay / 1000}s)`,
+                services.localizationService.intlGet(null, 'reconnectingCap'),
+                `${services.localizationService.intlGet(null, 'reconnectingToServer')} (attempt ${attempt}, delay ${delay / 1000}s)`,
             );
 
-            delete client.rustplusInstances[guildId];
+            delete services.manager.rustplusInstances[guildId];
 
-            if (client.rustplusReconnectTimers[guildId]) {
-                clearTimeout(client.rustplusReconnectTimers[guildId]);
-                client.rustplusReconnectTimers[guildId] = null;
+            if (services.manager.rustplusReconnectTimers[guildId]) {
+                clearTimeout(services.manager.rustplusReconnectTimers[guildId]);
+                services.manager.rustplusReconnectTimers[guildId] = null;
             }
 
-            client.rustplusReconnectTimers[guildId] = setTimeout(
-                client.createRustplusInstance.bind(client),
+            services.manager.rustplusReconnectTimers[guildId] = setTimeout(
+                services.manager.createRustplusInstance.bind(services.manager),
                 delay,
                 guildId,
                 rustplus.server,

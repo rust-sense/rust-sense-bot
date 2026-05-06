@@ -1,6 +1,7 @@
 import * as Discord from 'discord.js';
+import * as Constants from '../domain/constants.js';
 import { client } from '../index.js';
-import * as Constants from '../util/constants.js';
+import { getPersistenceService } from '../persistence/index.js';
 
 const SUCCESS = Discord.ButtonStyle.Success;
 const DANGER = Discord.ButtonStyle.Danger;
@@ -21,8 +22,8 @@ export function getButton(options: any = {}) {
     return button;
 }
 
-export function getServerButtons(guildId: string, serverId: string, state: number | null = null) {
-    const instance = client.getInstance(guildId);
+export async function getServerButtons(guildId: string, serverId: string, state: number | null = null) {
+    const instance = await getPersistenceService().readGuildState(guildId);
     const server: any = instance.serverList[serverId];
     const identifier = JSON.stringify({ serverId: serverId });
 
@@ -117,8 +118,8 @@ export function getServerButtons(guildId: string, serverId: string, state: numbe
     }
 }
 
-export function getSmartSwitchButtons(guildId: string, serverId: string, entityId: string) {
-    const instance = client.getInstance(guildId);
+export async function getSmartSwitchButtons(guildId: string, serverId: string, entityId: string) {
+    const instance = await getPersistenceService().readGuildState(guildId);
     const entity = instance.serverList[serverId].switches[entityId];
     const identifier = JSON.stringify({ serverId: serverId, entityId: entityId });
 
@@ -182,8 +183,8 @@ export function getSmartSwitchGroupButtons(guildId: string, serverId: string, gr
     ];
 }
 
-export function getSmartAlarmButtons(guildId: string, serverId: string, entityId: string) {
-    const instance = client.getInstance(guildId);
+export async function getSmartAlarmButtons(guildId: string, serverId: string, entityId: string) {
+    const instance = await getPersistenceService().readGuildState(guildId);
     const entity = instance.serverList[serverId].alarms[entityId];
     const identifier = JSON.stringify({ serverId: serverId, entityId: entityId });
 
@@ -206,8 +207,8 @@ export function getSmartAlarmButtons(guildId: string, serverId: string, entityId
     );
 }
 
-export function getStorageMonitorToolCupboardButtons(guildId: string, serverId: string, entityId: string) {
-    const instance = client.getInstance(guildId);
+export async function getStorageMonitorToolCupboardButtons(guildId: string, serverId: string, entityId: string) {
+    const instance = await getPersistenceService().readGuildState(guildId);
     const entity = instance.serverList[serverId].storageMonitors[entityId];
     const identifier = JSON.stringify({ serverId: serverId, entityId: entityId });
 
@@ -305,8 +306,8 @@ export function getInGameCommandsEnabledButton(guildId: string, enabled: boolean
     );
 }
 
-export function getInGameTeammateNotificationsButtons(guildId: string) {
-    const instance = client.getInstance(guildId);
+export async function getInGameTeammateNotificationsButtons(guildId: string) {
+    const instance = await getPersistenceService().readGuildState(guildId);
 
     return new Discord.ActionRowBuilder().addComponents(
         getButton({
@@ -382,8 +383,8 @@ export function getLeaderCommandOnlyForPairedButton(guildId: string, enabled: bo
     );
 }
 
-export function getTrackerButtons(guildId: string, trackerId: string) {
-    const instance = client.getInstance(guildId);
+export async function getTrackerButtons(guildId: string, trackerId: string) {
+    const instance = await getPersistenceService().readGuildState(guildId);
     const tracker: any = instance.trackers[trackerId];
     const identifier = JSON.stringify({ trackerId: trackerId });
 
@@ -475,32 +476,20 @@ export function getHelpButtons() {
         new Discord.ActionRowBuilder().addComponents(
             getButton({
                 style: Discord.ButtonStyle.Link,
-                label: 'ORIGINAL DEVELOPER',
-                url: 'https://github.com/alexemanuelol',
-            }),
-            getButton({
-                style: Discord.ButtonStyle.Link,
-                label: 'FORK DEVELOPER',
-                url: 'https://github.com/faithix',
-            }),
-            getButton({
-                style: Discord.ButtonStyle.Link,
                 label: 'REPOSITORY',
-                url: 'https://github.com/rust-sense/bot',
-            }),
-        ),
-        new Discord.ActionRowBuilder().addComponents(
-            getButton({
-                style: Discord.ButtonStyle.Link,
-                label: 'DOCUMENTATION',
-                url: 'https://github.com/rust-sense/bot/blob/develop/docs/documentation.md',
+                url: 'https://github.com/rust-sense/rust-sense-bot',
             }),
             getButton({
                 style: Discord.ButtonStyle.Link,
-                label: 'CREDENTIALS',
-                url: 'https://rust-sense-credentials.netlify.app/',
+                label: 'ISSUE TRACKER',
+                url: 'https://github.com/rust-sense/rust-sense-bot/issues',
             }),
-        ),
+            getButton({
+                style: Discord.ButtonStyle.Link,
+                label: 'EXTENSION',
+                url: 'https://chromewebstore.google.com/detail/rust-companion-authentica/idihpaljmebenfolkfibmdpefgcgcddd',
+            }),
+        )
     ];
 }
 
@@ -514,8 +503,8 @@ export function getDisplayInformationBattlemetricsAllOnlinePlayersButton(guildId
     );
 }
 
-export function getSubscribeToChangesBattlemetricsButtons(guildId: string) {
-    const instance = client.getInstance(guildId);
+export async function getSubscribeToChangesBattlemetricsButtons(guildId: string) {
+    const instance = await getPersistenceService().readGuildState(guildId);
 
     return [
         new Discord.ActionRowBuilder().addComponents(

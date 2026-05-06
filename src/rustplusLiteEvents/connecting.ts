@@ -1,6 +1,12 @@
+import type RustPlusLite from '../structures/RustPlusLite.js';
+import type { RustPlusLiteEventServices } from '../types/rustplusLiteEvents.js';
+
 export default {
     name: 'connecting',
-    async execute(rustplusLite, client) {
-        rustplusLite.log(client.intlGet(null, 'connectingCap'), client.intlGet(null, 'connectingToServer'));
+    execute(rustplusLite: RustPlusLite, services: RustPlusLiteEventServices) {
+        rustplusLite.log(
+            services.localizationService.intlGet(null, 'connectingCap'),
+            services.localizationService.intlGet(null, 'connectingToServer'),
+        );
     },
 };

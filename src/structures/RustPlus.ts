@@ -1,30 +1,52 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import Translate from 'translate';
-import { resolve } from '../container.js';
 import * as DiscordEmbeds from '../discordTools/discordEmbeds.js';
 import * as DiscordMessages from '../discordTools/discordMessages.js';
 import * as DiscordTools from '../discordTools/discordTools.js';
 import * as DiscordVoice from '../discordTools/discordVoice.js';
-import * as InGameChatHandler from '../handlers/inGameChatHandler.js';
-import * as TeamHandler from '../handlers/teamHandler.js';
+import * as Constants from '../domain/constants.js';
+import * as Decay from '../domain/decay.js';
+import * as GameMap from '../domain/GameMap.js';
+import { languages } from '../domain/languages.js';
+import * as Timer from '../domain/timer.js';
+import type { IBattlemetricsRegistry } from '../interfaces/IBattlemetricsRegistry.js';
+import type { IDiscordNotifier } from '../interfaces/IDiscordNotifier.js';
+import type { IGameDataProvider } from '../interfaces/IGameDataProvider.js';
+import type { ILocalizationService } from '../interfaces/ILocalizationService.js';
+import type { IRustPlusManagerClient } from '../interfaces/IRustPlusManagerClient.js';
+import type RuntimeDataStorage from '../infrastructure/RuntimeDataStorage.js';
 import { RustPlus as RustPlusLib } from '../lib/rustplus/RustPlus.js';
+import { getPersistenceService } from '../persistence/index.js';
 import rustplusEvents from '../rustplusEvents/index.js';
+import * as InGameChatHandler from '../services/inGameChatService.js';
+import * as TeamHandler from '../services/teamService.js';
 import RustPlusLite from '../structures/RustPlusLite.js';
-import type { RustplusEvent } from '../types/discord.js';
-import * as Constants from '../util/constants.js';
-import * as Decay from '../util/decay.js';
-import * as GameMap from '../util/GameMap.js';
-import getRuntimeDataStorage from '../util/getRuntimeDataStorage.js';
-import * as InstanceUtils from '../util/instanceUtils.js';
-import { languages } from '../util/languages.js';
-import * as Timer from '../util/timer.js';
+import type { GeneralSettings, NotificationSettings } from '../types/instance.js';
+import type {
+    EventsLog,
+    MarkerEntry,
+    SubscriptionItems,
+    TimerEntry,
+    TracerPoint,
+} from '../types/rustplus.js';
+import type { RustPlusEventServices, RustplusEvent } from '../types/rustplusEvents.js';
 import { getPlayerName } from '../utils/playerNameUtils.js';
+import type GameMapStructure from './GameMap.js';
+import type Info from './Info.js';
 import LibLoggerAdapter from './LibLoggerAdapter.js';
 import Logger from './Logger.js';
+import type MapMarkers from './MapMarkers.js';
+import type Team from './Team.js';
+import type Time from './Time.js';
 
-function getClient(): any {
-    return resolve('discordBot');
+export interface RustPlusDeps {
+    localizationService: ILocalizationService;
+    gameDataProvider: IGameDataProvider;
+    battlemetricsManager: IBattlemetricsRegistry;
+    discordNotifier: IDiscordNotifier;
+    manager: IRustPlusManagerClient;
+    runtimeDataStorage: RuntimeDataStorage;
 }
 
 const TOKENS_LIMIT = 24; /* Per player */
@@ -71,17 +93,78 @@ interface PersistedRuntimeState {
 }
 
 export default class RustPlus extends RustPlusLib {
-    [key: string]: any;
-
     serverId!: string;
     guildId!: string;
+    logger!: Logger;
 
-    constructor(guildId: string, serverIp: string, appPort: number, steamId: string, playerToken: string) {
+    isOperational!: boolean;
+    isDeleted!: boolean;
+    isNewConnection!: boolean;
+    isFirstPoll!: boolean;
+    persistentRuntimeStateRestored!: boolean;
+    _reconnectAttempts!: number;
+    _pollingInProgress!: boolean;
+
+    pollingTaskId!: ReturnType<typeof setInterval> | number;
+    tokensReplenishTaskId!: ReturnType<typeof setInterval> | number;
+
+    tokens!: number;
+
+    timers!: Record<number, TimerEntry>;
+    markers!: Record<string, MarkerEntry>;
+    storageMonitors!: Record<string, any>;
+    currentSwitchTimeouts!: Record<string, ReturnType<typeof setTimeout>>;
+    interactionSwitches!: any[];
+
+    passedFirstSunriseOrSunset!: boolean;
+    startTimeObject!: Record<string, any>;
+    informationIntervalCounter!: number;
+    storageMonitorIntervalCounter!: number;
+    smartSwitchIntervalCounter!: number;
+    smartAlarmIntervalCounter!: number;
+
+    messagesSentByBot!: string[];
+    inGameChatQueue!: string[];
+    inGameChatTimeout!: ReturnType<typeof setTimeout> | null;
+
+    foundSubscriptionItems!: SubscriptionItems;
+    currentOrderList!: any[];
+    currentOrderPage!: number;
+    firstPollItems!: SubscriptionItems;
+
+    allConnections!: string[];
+    playerConnections!: Record<string, string[]>;
+    allDeaths!: any[];
+    playerDeaths!: Record<string, any[]>;
+    events!: EventsLog;
+    patrolHelicopterTracers!: Record<string | number, TracerPoint[]>;
+    cargoShipTracers!: Record<string | number, TracerPoint[]>;
+
+    map!: GameMapStructure | null;
+    info!: Info | null;
+    time!: Time | null;
+    team!: Team | null;
+    mapMarkers!: MapMarkers | null;
+
+    leaderRustPlusInstance!: RustPlusLite | null;
+    uptimeServer!: Date | null;
+
+    generalSettings!: GeneralSettings;
+    notificationSettings!: NotificationSettings;
+    runtimeDataStorage!: RuntimeDataStorage;
+
+    /* Computed/derived state set externally */
+    trademarkString!: string;
+
+    private _deps!: RustPlusDeps;
+
+    constructor(guildId: string, serverIp: string, appPort: number, steamId: string, playerToken: string, deps: RustPlusDeps) {
         super(serverIp, appPort, steamId, playerToken);
 
+        this._deps = deps;
         this.serverId = `${this.server}-${this.port}`;
         this.guildId = guildId;
-        this.runtimeDataStorage = getRuntimeDataStorage();
+        this.runtimeDataStorage = deps.runtimeDataStorage;
         this.persistentRuntimeStateRestored = false;
 
         this.leaderRustPlusInstance = null;
@@ -153,15 +236,22 @@ export default class RustPlus extends RustPlusLib {
         this.loadRustPlusEvents();
     }
 
+    intlGet(guildId: string | null, id: string, variables: Record<string, unknown> = {}): string {
+        return this._deps.localizationService.intlGet(guildId, id, variables);
+    }
+
     loadRustPlusEvents(): void {
+        const services: RustPlusEventServices = {
+            localizationService: this._deps.localizationService,
+            manager: this._deps.manager,
+        };
         for (const event of rustplusEvents as RustplusEvent[]) {
-            this.on(event.name, (...args: unknown[]) => event.execute(this, getClient(), ...args));
+            this.on(event.name, (...args: unknown[]) => event.execute(this, services, ...args));
         }
     }
 
-    loadMarkers(): void {
-        const client = getClient();
-        const instance = client.getInstance(this.guildId);
+    async loadMarkers(): Promise<void> {
+        const instance = await getPersistenceService().readGuildState(this.guildId);
 
         for (const [name, location] of Object.entries(instance.serverList[this.serverId].markers) as [
             string,
@@ -246,9 +336,8 @@ export default class RustPlus extends RustPlusLib {
 
             this.timers[id] = {
                 timer: new Timer.Timer(() => {
-                    const client = getClient();
                     this.sendInGameMessage(
-                        client.intlGet(this.guildId, 'timer', {
+                        this.intlGet(this.guildId, 'timer', {
                             message: timerData.message,
                         }),
                     );
@@ -380,43 +469,53 @@ export default class RustPlus extends RustPlusLib {
         if (state.timeSinceCargoShipWasOutMs) {
             this.mapMarkers.timeSinceCargoShipWasOut = this.timestampToDate(state.timeSinceCargoShipWasOutMs);
         }
+
         if (state.timeSinceCH47WasOutMs) {
             this.mapMarkers.timeSinceCH47WasOut = this.timestampToDate(state.timeSinceCH47WasOutMs);
         }
+
         if (state.timeSinceSmallOilRigWasTriggeredMs) {
             this.mapMarkers.timeSinceSmallOilRigWasTriggered = this.timestampToDate(
                 state.timeSinceSmallOilRigWasTriggeredMs,
             );
         }
+
         if (state.timeSinceLargeOilRigWasTriggeredMs) {
             this.mapMarkers.timeSinceLargeOilRigWasTriggered = this.timestampToDate(
                 state.timeSinceLargeOilRigWasTriggeredMs,
             );
         }
+
         if (state.timeSincePatrolHelicopterWasOnMapMs) {
             this.mapMarkers.timeSincePatrolHelicopterWasOnMap = this.timestampToDate(
                 state.timeSincePatrolHelicopterWasOnMapMs,
             );
         }
+
         if (state.timeSincePatrolHelicopterWasDestroyedMs) {
             this.mapMarkers.timeSincePatrolHelicopterWasDestroyed = this.timestampToDate(
                 state.timeSincePatrolHelicopterWasDestroyedMs,
             );
         }
+
         if (state.patrolHelicopterDestroyedLocation) {
             this.mapMarkers.patrolHelicopterDestroyedLocation = state.patrolHelicopterDestroyedLocation;
         }
+
         if (state.timeSinceTravelingVendorWasOnMapMs) {
             this.mapMarkers.timeSinceTravelingVendorWasOnMap = this.timestampToDate(
                 state.timeSinceTravelingVendorWasOnMapMs,
             );
         }
+
         if (state.timeSinceDeepSeaSpawnedMs) {
             this.mapMarkers.timeSinceDeepSeaSpawned = this.timestampToDate(state.timeSinceDeepSeaSpawnedMs);
         }
+
         if (state.timeSinceDeepSeaWasOnMapMs) {
             this.mapMarkers.timeSinceDeepSeaWasOnMap = this.timestampToDate(state.timeSinceDeepSeaWasOnMapMs);
         }
+
         if (state.crateSmallOilRigLocation || state.crateSmallOilRigUnlockAtMs) {
             this.restoreOilRigCrateTimerFromState(
                 'small',
@@ -424,6 +523,7 @@ export default class RustPlus extends RustPlusLib {
                 state.crateSmallOilRigLocation,
             );
         }
+
         if (state.crateLargeOilRigLocation || state.crateLargeOilRigUnlockAtMs) {
             this.restoreOilRigCrateTimerFromState(
                 'large',
@@ -461,9 +561,8 @@ export default class RustPlus extends RustPlusLib {
         }
     }
 
-    build(): void {
-        const client = getClient();
-        const instance = client.getInstance(this.guildId);
+    async build(): Promise<void> {
+        const instance = await getPersistenceService().readGuildState(this.guildId);
 
         this.logger = new Logger(`${this.guildId}.log`);
         this.logger.setGuildId(this.guildId);
@@ -476,19 +575,18 @@ export default class RustPlus extends RustPlusLib {
         this.connect();
     }
 
-    updateLeaderRustPlusLiteInstance(): void {
-        const client = getClient();
+    async updateLeaderRustPlusLiteInstance(): Promise<void> {
         if (this.leaderRustPlusInstance !== null) {
-            if (client.rustplusLiteReconnectTimers[this.guildId]) {
-                clearTimeout(client.rustplusLiteReconnectTimers[this.guildId]);
-                client.rustplusLiteReconnectTimers[this.guildId] = null;
+            if (this._deps.manager.rustplusLiteReconnectTimers[this.guildId]) {
+                clearTimeout(this._deps.manager.rustplusLiteReconnectTimers[this.guildId]);
+                this._deps.manager.rustplusLiteReconnectTimers[this.guildId] = null;
             }
             this.leaderRustPlusInstance.isActive = false;
             this.leaderRustPlusInstance.disconnect();
             this.leaderRustPlusInstance = null;
         }
 
-        const instance = client.getInstance(this.guildId);
+        const instance = await getPersistenceService().readGuildState(this.guildId);
         const leader = this.team.leaderSteamId;
         if (leader === this.playerId) return;
         if (!(leader in instance.serverListLite[this.serverId])) return;
@@ -502,12 +600,14 @@ export default class RustPlus extends RustPlusLib {
             serverLite.appPort,
             serverLite.steamId,
             serverLite.playerToken,
+            this._deps.localizationService,
+            this._deps.manager,
         );
         this.leaderRustPlusInstance.connect();
     }
 
-    isServerAvailable(): boolean {
-        const instance = getClient().getInstance(this.guildId);
+    async isServerAvailable(): Promise<boolean> {
+        const instance = await getPersistenceService().readGuildState(this.guildId);
         return Object.hasOwn(instance.serverList, this.serverId);
     }
 
@@ -535,9 +635,8 @@ export default class RustPlus extends RustPlusLib {
     }
 
     updateEvents(event: string, message: string): void {
-        const client = getClient();
         const validEvents = ['cargo', 'heli', 'small', 'large', 'chinook'].map((k) =>
-            client.intlGet('en', `commandSyntax${k.charAt(0).toUpperCase() + k.slice(1)}`),
+            this.intlGet('en', `commandSyntax${k.charAt(0).toUpperCase() + k.slice(1)}`),
         );
         if (!validEvents.includes(event)) return;
 
@@ -556,12 +655,11 @@ export default class RustPlus extends RustPlusLib {
     deleteThisRustplusInstance(): boolean {
         this.isDeleted = true;
         this.disconnect();
-        const client = getClient();
         if (
-            Object.hasOwn(client.rustplusInstances, this.guildId) &&
-            client.rustplusInstances[this.guildId].serverId === this.serverId
+            Object.hasOwn(this._deps.manager.rustplusInstances, this.guildId) &&
+            this._deps.manager.rustplusInstances[this.guildId].serverId === this.serverId
         ) {
-            delete client.rustplusInstances[this.guildId];
+            delete this._deps.manager.rustplusInstances[this.guildId];
             return true;
         }
         return false;
@@ -572,10 +670,9 @@ export default class RustPlus extends RustPlusLib {
     }
 
     logInGameCommand(type = 'Default', message: any): void {
-        const client = getClient();
         this.log(
-            client.intlGet(null, 'infoCap'),
-            client.intlGet(null, 'logInGameCommand', {
+            this.intlGet(null, 'infoCap'),
+            this.intlGet(null, 'logInGameCommand', {
                 type,
                 command: message.broadcast.teamMessage.message.message,
                 user: `${message.broadcast.teamMessage.message.name} (${message.broadcast.teamMessage.message.steamId.toString()})`,
@@ -584,7 +681,7 @@ export default class RustPlus extends RustPlusLib {
     }
 
     sendInGameMessage(message: any): void {
-        InGameChatHandler.inGameChatHandler(this, getClient(), message);
+        InGameChatHandler.inGameChatHandler(this, this._deps.localizationService, message);
     }
 
     async sendEvent(
@@ -595,14 +692,13 @@ export default class RustPlus extends RustPlusLib {
         firstPoll = false,
         image: string | null = null,
     ): Promise<void> {
-        const client = getClient();
         const img = image ?? setting.image;
         this.updateEvents(event, text);
         if (!firstPoll && setting.discord)
             await DiscordMessages.sendDiscordEventMessage(this.guildId, this.serverId, text, img, embedColor);
         if (!firstPoll && setting.inGame) await this.sendInGameMessage(`${text}`);
         if (!firstPoll && setting.voice) await DiscordVoice.sendDiscordVoiceMessage(this.guildId, text);
-        this.log(client.intlGet(null, 'eventCap'), text);
+        this.log(this.intlGet(null, 'eventCap'), text);
     }
 
     replenishTokens(): void {
@@ -620,7 +716,7 @@ export default class RustPlus extends RustPlusLib {
         return true;
     }
 
-    async turnSmartSwitchAsync(id: number, value: boolean, timeout = 10000): Promise<any> {
+    turnSmartSwitchAsync(id: number, value: boolean, timeout = 10000): Promise<any> {
         return value ? this.turnSmartSwitchOnAsync(id, timeout) : this.turnSmartSwitchOffAsync(id, timeout);
     }
 
@@ -643,7 +739,7 @@ export default class RustPlus extends RustPlusLib {
     async setEntityValueAsync(id: number, value: boolean, timeout = 10000): Promise<any> {
         try {
             if (!(await this.waitForAvailableTokens(1)))
-                return { error: getClient().intlGet(null, 'tokensDidNotReplenish') };
+                return { error: this.intlGet(null, 'tokensDidNotReplenish') };
             return await this.sendRequestAsync({ entityId: id, setEntityValue: { value } }, timeout).catch(
                 (e: any) => e,
             );
@@ -655,7 +751,7 @@ export default class RustPlus extends RustPlusLib {
     async sendTeamMessageAsync(message: string, timeout = 10000): Promise<any> {
         try {
             if (!(await this.waitForAvailableTokens(2)))
-                return { error: getClient().intlGet(null, 'tokensDidNotReplenish') };
+                return { error: this.intlGet(null, 'tokensDidNotReplenish') };
             return await this.sendRequestAsync({ sendTeamMessage: { message } }, timeout).catch((e: any) => e);
         } catch (e) {
             return e;
@@ -665,7 +761,7 @@ export default class RustPlus extends RustPlusLib {
     async getEntityInfoAsync(id: number, timeout = 10000): Promise<any> {
         try {
             if (!(await this.waitForAvailableTokens(1)))
-                return { error: getClient().intlGet(null, 'tokensDidNotReplenish') };
+                return { error: this.intlGet(null, 'tokensDidNotReplenish') };
             return await this.sendRequestAsync({ entityId: id, getEntityInfo: {} }, timeout).catch((e: any) => e);
         } catch (e) {
             return e;
@@ -675,7 +771,7 @@ export default class RustPlus extends RustPlusLib {
     async getMapAsync(timeout = 30000): Promise<any> {
         try {
             if (!(await this.waitForAvailableTokens(5)))
-                return { error: getClient().intlGet(null, 'tokensDidNotReplenish') };
+                return { error: this.intlGet(null, 'tokensDidNotReplenish') };
             return await this.sendRequestAsync({ getMap: {} }, timeout).catch((e: any) => e);
         } catch (e) {
             return e;
@@ -685,7 +781,7 @@ export default class RustPlus extends RustPlusLib {
     async getTimeAsync(timeout = 10000): Promise<any> {
         try {
             if (!(await this.waitForAvailableTokens(1)))
-                return { error: getClient().intlGet(null, 'tokensDidNotReplenish') };
+                return { error: this.intlGet(null, 'tokensDidNotReplenish') };
             return await this.sendRequestAsync({ getTime: {} }, timeout).catch((e: any) => e);
         } catch (e) {
             return e;
@@ -695,7 +791,7 @@ export default class RustPlus extends RustPlusLib {
     async getMapMarkersAsync(timeout = 10000): Promise<any> {
         try {
             if (!(await this.waitForAvailableTokens(1)))
-                return { error: getClient().intlGet(null, 'tokensDidNotReplenish') };
+                return { error: this.intlGet(null, 'tokensDidNotReplenish') };
             return await this.sendRequestAsync({ getMapMarkers: {} }, timeout).catch((e: any) => e);
         } catch (e) {
             return e;
@@ -705,7 +801,7 @@ export default class RustPlus extends RustPlusLib {
     async getInfoAsync(timeout = 10000): Promise<any> {
         try {
             if (!(await this.waitForAvailableTokens(1)))
-                return { error: getClient().intlGet(null, 'tokensDidNotReplenish') };
+                return { error: this.intlGet(null, 'tokensDidNotReplenish') };
             return await this.sendRequestAsync({ getInfo: {} }, timeout).catch((e: any) => e);
         } catch (e) {
             return e;
@@ -715,7 +811,7 @@ export default class RustPlus extends RustPlusLib {
     async getTeamInfoAsync(timeout = 10000): Promise<any> {
         try {
             if (!(await this.waitForAvailableTokens(1)))
-                return { error: getClient().intlGet(null, 'tokensDidNotReplenish') };
+                return { error: this.intlGet(null, 'tokensDidNotReplenish') };
             return await this.sendRequestAsync({ getTeamInfo: {} }, timeout).catch((e: any) => e);
         } catch (e) {
             return e;
@@ -725,7 +821,7 @@ export default class RustPlus extends RustPlusLib {
     async subscribeToCameraAsync(identifier: string, timeout = 10000): Promise<any> {
         try {
             if (!(await this.waitForAvailableTokens(1)))
-                return { error: getClient().intlGet(null, 'tokensDidNotReplenish') };
+                return { error: this.intlGet(null, 'tokensDidNotReplenish') };
             return await this.sendRequestAsync({ cameraSubscribe: { cameraId: identifier } }, timeout).catch(
                 (e: any) => e,
             );
@@ -737,7 +833,7 @@ export default class RustPlus extends RustPlusLib {
     async unsubscribeFromCameraAsync(timeout = 10000): Promise<any> {
         try {
             if (!(await this.waitForAvailableTokens(1)))
-                return { error: getClient().intlGet(null, 'tokensDidNotReplenish') };
+                return { error: this.intlGet(null, 'tokensDidNotReplenish') };
             return await this.sendRequestAsync({ cameraUnsubscribe: {} }, timeout).catch((e: any) => e);
         } catch (e) {
             return e;
@@ -747,7 +843,7 @@ export default class RustPlus extends RustPlusLib {
     async sendCameraInputAsync(buttons: any, x: number, y: number, timeout = 1000): Promise<any> {
         try {
             if (!(await this.waitForAvailableTokens(0.01)))
-                return { error: getClient().intlGet(null, 'tokensDidNotReplenish') };
+                return { error: this.intlGet(null, 'tokensDidNotReplenish') };
             return await this.sendRequestAsync({ cameraInput: { buttons, mouseDelta: { x, y } } }, timeout).catch(
                 (e: any) => e,
             );
@@ -759,7 +855,7 @@ export default class RustPlus extends RustPlusLib {
     async promoteToLeaderAsync(steamId: string, timeout = 10000): Promise<any> {
         try {
             if (!(await this.waitForAvailableTokens(1)))
-                return { error: getClient().intlGet(null, 'tokensDidNotReplenish') };
+                return { error: this.intlGet(null, 'tokensDidNotReplenish') };
             return await this.sendRequestAsync({ promoteToLeader: { steamId } }, timeout).catch((e: any) => e);
         } catch (e) {
             return e;
@@ -769,7 +865,7 @@ export default class RustPlus extends RustPlusLib {
     async getTeamChatAsync(timeout = 10000): Promise<any> {
         try {
             if (!(await this.waitForAvailableTokens(1)))
-                return { error: getClient().intlGet(null, 'tokensDidNotReplenish') };
+                return { error: this.intlGet(null, 'tokensDidNotReplenish') };
             return await this.sendRequestAsync({ getTeamChat: {} }, timeout).catch((e: any) => e);
         } catch (e) {
             return e;
@@ -779,7 +875,7 @@ export default class RustPlus extends RustPlusLib {
     async checkSubscriptionAsync(id: number, timeout = 10000): Promise<any> {
         try {
             if (!(await this.waitForAvailableTokens(1)))
-                return { error: getClient().intlGet(null, 'tokensDidNotReplenish') };
+                return { error: this.intlGet(null, 'tokensDidNotReplenish') };
             return await this.sendRequestAsync({ entityId: id, checkSubscription: {} }, timeout).catch((e: any) => e);
         } catch (e) {
             return e;
@@ -789,7 +885,7 @@ export default class RustPlus extends RustPlusLib {
     async setSubscriptionAsync(id: number, value: boolean, timeout = 10000): Promise<any> {
         try {
             if (!(await this.waitForAvailableTokens(1)))
-                return { error: getClient().intlGet(null, 'tokensDidNotReplenish') };
+                return { error: this.intlGet(null, 'tokensDidNotReplenish') };
             return await this.sendRequestAsync({ entityId: id, setSubscription: { value } }, timeout).catch(
                 (e: any) => e,
             );
@@ -801,30 +897,29 @@ export default class RustPlus extends RustPlusLib {
     async getCameraFrameAsync(identifier: string, frame: number, timeout = 10000): Promise<any> {
         try {
             if (!(await this.waitForAvailableTokens(2)))
-                return { error: getClient().intlGet(null, 'tokensDidNotReplenish') };
+                return { error: this.intlGet(null, 'tokensDidNotReplenish') };
             return await this.sendRequestAsync({ getCameraFrame: { identifier, frame } }, timeout).catch((e: any) => e);
         } catch (e) {
             return e;
         }
     }
 
-    async isResponseValid(response: any): Promise<boolean> {
-        const client = getClient();
+    isResponseValid(response: any): boolean {
         if (response === undefined) {
-            this.log(client.intlGet(null, 'errorCap'), client.intlGet(null, 'responseIsUndefined'), 'error');
+            this.log(this.intlGet(null, 'errorCap'), this.intlGet(null, 'responseIsUndefined'), 'error');
             return false;
         } else if (response.toString() === 'Error: Timeout reached while waiting for response') {
-            this.log(client.intlGet(null, 'errorCap'), client.intlGet(null, 'responseTimeout'), 'error');
+            this.log(this.intlGet(null, 'errorCap'), this.intlGet(null, 'responseTimeout'), 'error');
             return false;
         } else if (Object.hasOwn(response, 'error')) {
             this.log(
-                client.intlGet(null, 'errorCap'),
-                client.intlGet(null, 'responseContainError', { error: JSON.stringify(response) }),
+                this.intlGet(null, 'errorCap'),
+                this.intlGet(null, 'responseContainError', { error: JSON.stringify(response) }),
                 'error',
             );
             return false;
         } else if (Object.keys(response).length === 0) {
-            this.log(client.intlGet(null, 'errorCap'), client.intlGet(null, 'responseIsEmpty'), 'error');
+            this.log(this.intlGet(null, 'errorCap'), this.intlGet(null, 'responseIsEmpty'), 'error');
             clearInterval(this.pollingTaskId);
             return false;
         }
@@ -834,26 +929,24 @@ export default class RustPlus extends RustPlusLib {
     /* In-game commands */
 
     getCommandAfk(): string {
-        const client = getClient();
         let str = '';
         for (const player of this.team.players) {
             if (player.isOnline && player.getAfkSeconds() >= 300) {
                 str += `${player.name} [${player.getAfkTime('dhs')}], `;
             }
         }
-        return str !== '' ? `${str.slice(0, -2)}.` : client.intlGet(this.guildId, 'noOneIsAfk');
+        return str !== '' ? `${str.slice(0, -2)}.` : this.intlGet(this.guildId, 'noOneIsAfk');
     }
 
     getCommandAlive(command: string): string | null {
-        const client = getClient();
         const prefix = this.generalSettings.prefix;
-        const cmdAlive = `${prefix}${client.intlGet(this.guildId, 'commandSyntaxAlive')}`;
-        const cmdAliveEn = `${prefix}${client.intlGet('en', 'commandSyntaxAlive')}`;
+        const cmdAlive = `${prefix}${this.intlGet(this.guildId, 'commandSyntaxAlive')}`;
+        const cmdAliveEn = `${prefix}${this.intlGet('en', 'commandSyntaxAlive')}`;
         const lc = command.toLowerCase();
 
         if (lc === cmdAlive || lc === cmdAliveEn) {
             const player = this.team.getPlayerLongestAlive();
-            return client.intlGet(this.guildId, 'hasBeenAliveLongest', {
+            return this.intlGet(this.guildId, 'hasBeenAliveLongest', {
                 name: player.name,
                 time: player.getAliveTime(),
             });
@@ -866,31 +959,34 @@ export default class RustPlus extends RustPlusLib {
 
         for (const player of this.team.players) {
             if (player.name.includes(name)) {
-                return client.intlGet(this.guildId, 'playerHasBeenAliveFor', {
+                return this.intlGet(this.guildId, 'playerHasBeenAliveFor', {
                     name: player.name,
                     time: player.getAliveTime(),
                 });
             }
         }
-        return client.intlGet(this.guildId, 'couldNotFindTeammate', { name });
+        return this.intlGet(this.guildId, 'couldNotFindTeammate', { name });
     }
 
     getCommandCargo(isInfoChannel = false): any {
-        const client = getClient();
         const strings: string[] = [];
         let unhandled = this.mapMarkers.cargoShips.map((e: any) => e.id);
 
         for (const [id, timer] of Object.entries(this.mapMarkers.cargoShipEgressTimers)) {
             const cargoShip = this.mapMarkers.getMarkerByTypeId(this.mapMarkers.types.CargoShip, parseInt(id));
+            if (!cargoShip?.location) {
+                unhandled = unhandled.filter((e: any) => e !== parseInt(id));
+                continue;
+            }
             const time = Timer.getTimeLeftOfTimer(timer as any);
             if (time) {
                 if (isInfoChannel)
-                    return client.intlGet(this.guildId, 'egressInTime', {
+                    return this.intlGet(this.guildId, 'egressInTime', {
                         time: Timer.getTimeLeftOfTimer(timer as any, 's'),
                         location: cargoShip.location.string,
                     });
                 strings.push(
-                    client.intlGet(this.guildId, 'timeBeforeCargoEntersEgress', {
+                    this.intlGet(this.guildId, 'timeBeforeCargoEntersEgress', {
                         time,
                         location: cargoShip.location.string,
                     }),
@@ -901,6 +997,7 @@ export default class RustPlus extends RustPlusLib {
 
         for (const id of unhandled) {
             const cargoShip = this.mapMarkers.getMarkerByTypeId(this.mapMarkers.types.CargoShip, id);
+            if (!cargoShip?.location) continue;
             const key = cargoShip.onItsWayOut
                 ? isInfoChannel
                     ? 'leavingMapAt'
@@ -908,57 +1005,55 @@ export default class RustPlus extends RustPlusLib {
                 : isInfoChannel
                   ? 'cargoAt'
                   : 'cargoLocatedAt';
-            if (isInfoChannel) return client.intlGet(this.guildId, key, { location: cargoShip.location.string });
-            strings.push(client.intlGet(this.guildId, key, { location: cargoShip.location.string }));
+            if (isInfoChannel) return this.intlGet(this.guildId, key, { location: cargoShip.location.string });
+            strings.push(this.intlGet(this.guildId, key, { location: cargoShip.location.string }));
         }
 
         if (strings.length === 0) {
             if (this.mapMarkers.timeSinceCargoShipWasOut === null) {
                 return isInfoChannel
-                    ? client.intlGet(this.guildId, 'notActive')
-                    : client.intlGet(this.guildId, 'cargoNotCurrentlyOnMap');
+                    ? this.intlGet(this.guildId, 'notActive')
+                    : this.intlGet(this.guildId, 'cargoNotCurrentlyOnMap');
             }
             const secondsSince = (Date.now() - this.mapMarkers.timeSinceCargoShipWasOut.getTime()) / 1000;
             const time = Timer.secondsToFullScale(secondsSince, isInfoChannel ? 's' : '');
             return isInfoChannel
-                ? client.intlGet(this.guildId, 'timeSinceLast', { time })
-                : client.intlGet(this.guildId, 'timeSinceCargoLeft', { time });
+                ? this.intlGet(this.guildId, 'timeSinceLast', { time })
+                : this.intlGet(this.guildId, 'timeSinceCargoLeft', { time });
         }
         return strings;
     }
 
     getCommandChinook(isInfoChannel = false): any {
-        const client = getClient();
         const strings: string[] = [];
         for (const ch47 of this.mapMarkers.ch47s) {
             if (ch47.ch47Type === 'crate') {
                 if (isInfoChannel)
-                    return client.intlGet(this.guildId, 'atLocation', { location: ch47.location.string });
-                strings.push(client.intlGet(this.guildId, 'chinook47Located', { location: ch47.location.string }));
+                    return this.intlGet(this.guildId, 'atLocation', { location: ch47.location.string });
+                strings.push(this.intlGet(this.guildId, 'chinook47Located', { location: ch47.location.string }));
             }
         }
 
         if (strings.length === 0) {
             if (this.mapMarkers.timeSinceCH47WasOut === null) {
                 return isInfoChannel
-                    ? client.intlGet(this.guildId, 'notActive')
-                    : client.intlGet(this.guildId, 'chinook47NotOnMap');
+                    ? this.intlGet(this.guildId, 'notActive')
+                    : this.intlGet(this.guildId, 'chinook47NotOnMap');
             }
             const secondsSince = (Date.now() - this.mapMarkers.timeSinceCH47WasOut.getTime()) / 1000;
             const time = Timer.secondsToFullScale(secondsSince, isInfoChannel ? 's' : '');
-            if (isInfoChannel) return client.intlGet(this.guildId, 'timeSinceLast', { time });
-            strings.push(client.intlGet(this.guildId, 'timeSinceChinook47OnMap', { time }));
+            if (isInfoChannel) return this.intlGet(this.guildId, 'timeSinceLast', { time });
+            strings.push(this.intlGet(this.guildId, 'timeSinceChinook47OnMap', { time }));
         }
         return strings;
     }
 
     getCommandConnection(command: string): any {
-        const client = getClient();
         const prefix = this.generalSettings.prefix;
-        const cmdConn = `${prefix}${client.intlGet(this.guildId, 'commandSyntaxConnection')}`;
-        const cmdConnEn = `${prefix}${client.intlGet('en', 'commandSyntaxConnection')}`;
-        const cmdConns = `${prefix}${client.intlGet(this.guildId, 'commandSyntaxConnections')}`;
-        const cmdConnsEn = `${prefix}${client.intlGet('en', 'commandSyntaxConnections')}`;
+        const cmdConn = `${prefix}${this.intlGet(this.guildId, 'commandSyntaxConnection')}`;
+        const cmdConnEn = `${prefix}${this.intlGet('en', 'commandSyntaxConnection')}`;
+        const cmdConns = `${prefix}${this.intlGet(this.guildId, 'commandSyntaxConnections')}`;
+        const cmdConnsEn = `${prefix}${this.intlGet('en', 'commandSyntaxConnections')}`;
         const lc = command.toLowerCase();
 
         if (lc.startsWith(cmdConns) || lc.startsWith(cmdConnsEn)) {
@@ -966,7 +1061,7 @@ export default class RustPlus extends RustPlusLib {
                 ? command.slice(cmdConns.length).trim()
                 : command.slice(cmdConnsEn.length).trim();
             const number = parseInt(rest);
-            if (this.allConnections.length === 0) return client.intlGet(this.guildId, 'noRegisteredConnectionEvents');
+            if (this.allConnections.length === 0) return this.intlGet(this.guildId, 'noRegisteredConnectionEvents');
             const strings: string[] = [];
             let counter = 1;
             for (const event of this.allConnections) {
@@ -989,7 +1084,7 @@ export default class RustPlus extends RustPlusLib {
                     if (!Object.hasOwn(this.playerConnections, player.steamId))
                         this.playerConnections[player.steamId] = [];
                     if (this.playerConnections[player.steamId].length === 0)
-                        return client.intlGet(this.guildId, 'noRegisteredConnectionEventsUser', { user: player.name });
+                        return this.intlGet(this.guildId, 'noRegisteredConnectionEventsUser', { user: player.name });
                     const strings: string[] = [];
                     let counter = 1;
                     for (const event of this.playerConnections[player.steamId]) {
@@ -1001,16 +1096,15 @@ export default class RustPlus extends RustPlusLib {
                     return strings;
                 }
             }
-            return client.intlGet(this.guildId, 'couldNotFindTeammate', { name });
+            return this.intlGet(this.guildId, 'couldNotFindTeammate', { name });
         }
         return null;
     }
 
     getCommandCraft(command: string): string {
-        const client = getClient();
         const prefix = this.generalSettings.prefix;
-        const cmdCraft = `${prefix}${client.intlGet(this.guildId, 'commandSyntaxCraft')}`;
-        const cmdCraftEn = `${prefix}${client.intlGet('en', 'commandSyntaxCraft')}`;
+        const cmdCraft = `${prefix}${this.intlGet(this.guildId, 'commandSyntaxCraft')}`;
+        const cmdCraftEn = `${prefix}${this.intlGet('en', 'commandSyntaxCraft')}`;
         const rest = command.toLowerCase().startsWith(`${cmdCraft} `)
             ? command.slice(`${cmdCraft} `.length).trim()
             : command.slice(`${cmdCraftEn} `.length).trim();
@@ -1021,42 +1115,41 @@ export default class RustPlus extends RustPlusLib {
         const itemName = isNum ? rest.slice(0, -lastWord.length).trim() : rest;
         const quantity = isNum ? parseInt(lastWord) : 1;
 
-        const itemId = client.items.getClosestItemIdByName(itemName);
-        if (!itemId || itemName === '') return client.intlGet(this.guildId, 'noItemWithNameFound', { name: itemName });
+        const itemId = this._deps.gameDataProvider.items.getClosestItemIdByName(itemName);
+        if (!itemId || itemName === '') return this.intlGet(this.guildId, 'noItemWithNameFound', { name: itemName });
 
-        const name = client.items.getName(itemId);
-        const craftDetails = client.rustlabs.getCraftDetailsById(itemId);
-        if (!craftDetails) return client.intlGet(this.guildId, 'couldNotFindCraftDetails', { name });
+        const name = this._deps.gameDataProvider.items.getName(itemId);
+        const craftDetails = this._deps.gameDataProvider.rustlabs.getCraftDetailsById(itemId);
+        if (!craftDetails) return this.intlGet(this.guildId, 'couldNotFindCraftDetails', { name });
 
         const d = craftDetails[2];
         const timeStr = quantity === 1 ? d.timeString : Timer.secondsToFullScale(d.time * quantity, '', true);
         let str = `${name} x${quantity} (${timeStr}): `;
         for (const ingredient of d.ingredients) {
-            str += `${client.items.getName(ingredient.id)} x${ingredient.quantity * quantity}, `;
+            str += `${this._deps.gameDataProvider.items.getName(ingredient.id)} x${ingredient.quantity * quantity}, `;
         }
         return str.slice(0, -2);
     }
 
     async getCommandDeath(command: string, callerSteamId: string): Promise<any> {
-        const client = getClient();
         const prefix = this.generalSettings.prefix;
-        const cmdDeath = `${prefix}${client.intlGet(this.guildId, 'commandSyntaxDeath')}`;
-        const cmdDeathEn = `${prefix}${client.intlGet('en', 'commandSyntaxDeath')}`;
-        const cmdDeaths = `${prefix}${client.intlGet(this.guildId, 'commandSyntaxDeaths')}`;
-        const cmdDeathsEn = `${prefix}${client.intlGet('en', 'commandSyntaxDeaths')}`;
+        const cmdDeath = `${prefix}${this.intlGet(this.guildId, 'commandSyntaxDeath')}`;
+        const cmdDeathEn = `${prefix}${this.intlGet('en', 'commandSyntaxDeath')}`;
+        const cmdDeaths = `${prefix}${this.intlGet(this.guildId, 'commandSyntaxDeaths')}`;
+        const cmdDeathsEn = `${prefix}${this.intlGet('en', 'commandSyntaxDeaths')}`;
         const lc = command.toLowerCase();
 
         const teamInfo = await this.getTeamInfoAsync();
         if (!(await this.isResponseValid(teamInfo))) return null;
-        TeamHandler.handler(this, client, teamInfo.teamInfo);
+        await TeamHandler.processTeamUpdate(this, this._deps.localizationService, teamInfo.teamInfo);
         this.team.updateTeam(teamInfo.teamInfo);
         const caller = this.team.getPlayer(callerSteamId);
 
         const buildDeathStr = (event: any) => {
-            if (!event.location) return client.intlGet(this.guildId, 'unknown');
+            if (!event.location) return this.intlGet(this.guildId, 'unknown');
             const dist = Math.floor(GameMap.getDistance(caller.x, caller.y, event.location.x, event.location.y));
             const dir = GameMap.getAngleBetweenPoints(caller.x, caller.y, event.location.x, event.location.y);
-            return client.intlGet(this.guildId, 'distanceDirectionGrid', {
+            return this.intlGet(this.guildId, 'distanceDirectionGrid', {
                 distance: dist,
                 direction: dir,
                 grid: event.location.location,
@@ -1068,7 +1161,7 @@ export default class RustPlus extends RustPlusLib {
                 ? command.slice(cmdDeaths.length).trim()
                 : command.slice(cmdDeathsEn.length).trim();
             const number = parseInt(rest);
-            if (this.allDeaths.length === 0) return client.intlGet(this.guildId, 'noRegisteredDeathEvents');
+            if (this.allDeaths.length === 0) return this.intlGet(this.guildId, 'noRegisteredDeathEvents');
             const strings: string[] = [];
             let counter = 1;
             for (const event of this.allDeaths) {
@@ -1090,7 +1183,7 @@ export default class RustPlus extends RustPlusLib {
             if (player.name.includes(name)) {
                 if (!Object.hasOwn(this.playerDeaths, player.steamId)) this.playerDeaths[player.steamId] = [];
                 if (this.playerDeaths[player.steamId].length === 0)
-                    return client.intlGet(this.guildId, 'noRegisteredDeathEventsUser', { user: player.name });
+                    return this.intlGet(this.guildId, 'noRegisteredDeathEventsUser', { user: player.name });
                 const strings: string[] = [];
                 let counter = 1;
                 for (const event of this.playerDeaths[player.steamId]) {
@@ -1103,14 +1196,13 @@ export default class RustPlus extends RustPlusLib {
                 return strings;
             }
         }
-        return client.intlGet(this.guildId, 'couldNotIdentifyMember', { name });
+        return this.intlGet(this.guildId, 'couldNotIdentifyMember', { name });
     }
 
     getCommandDecay(command: string): string {
-        const client = getClient();
         const prefix = this.generalSettings.prefix;
-        const cmdDecay = `${prefix}${client.intlGet(this.guildId, 'commandSyntaxDecay')}`;
-        const cmdDecayEn = `${prefix}${client.intlGet('en', 'commandSyntaxDecay')}`;
+        const cmdDecay = `${prefix}${this.intlGet(this.guildId, 'commandSyntaxDecay')}`;
+        const cmdDecayEn = `${prefix}${this.intlGet('en', 'commandSyntaxDecay')}`;
         const rest = command.toLowerCase().startsWith(`${cmdDecay} `)
             ? command.slice(`${cmdDecay} `.length).trim()
             : command.slice(`${cmdDecayEn} `.length).trim();
@@ -1124,31 +1216,31 @@ export default class RustPlus extends RustPlusLib {
         let type = 'items';
         let foundId: string | null = null;
 
-        foundId = client.rustlabs.getClosestOtherNameByName(itemInput);
-        if (foundId && client.rustlabs.decayData.hasEntry(foundId, 'other')) {
+        foundId = this._deps.gameDataProvider.rustlabs.getClosestOtherNameByName(itemInput);
+        if (foundId && this._deps.gameDataProvider.rustlabs.decayData.hasEntry(foundId, 'other')) {
             type = 'other';
         } else {
-            foundId = client.rustlabs.getClosestBuildingBlockNameByName(itemInput);
-            if (foundId && client.rustlabs.decayData.hasEntry(foundId, 'buildingBlocks')) {
+            foundId = this._deps.gameDataProvider.rustlabs.getClosestBuildingBlockNameByName(itemInput);
+            if (foundId && this._deps.gameDataProvider.rustlabs.decayData.hasEntry(foundId, 'buildingBlocks')) {
                 type = 'buildingBlocks';
             } else {
-                foundId = client.items.getClosestItemIdByName(itemInput);
-                if (foundId && !client.rustlabs.decayData.hasEntry(foundId, 'items')) foundId = null;
+                foundId = this._deps.gameDataProvider.items.getClosestItemIdByName(itemInput);
+                if (foundId && !this._deps.gameDataProvider.rustlabs.decayData.hasEntry(foundId, 'items')) foundId = null;
             }
         }
 
-        if (!foundId) return client.intlGet(this.guildId, 'noItemWithNameFound', { name: itemInput });
+        if (!foundId) return this.intlGet(this.guildId, 'noItemWithNameFound', { name: itemInput });
 
-        const itemName = type === 'items' ? client.items.getName(foundId) : foundId;
+        const itemName = type === 'items' ? this._deps.gameDataProvider.items.getName(foundId) : foundId;
         const decayDetails =
             type === 'items'
-                ? client.rustlabs.getDecayDetailsById(foundId)
-                : client.rustlabs.getDecayDetailsByName(foundId);
-        if (!decayDetails) return client.intlGet(this.guildId, 'couldNotFindDecayDetails', { name: itemName });
+                ? this._deps.gameDataProvider.rustlabs.getDecayDetailsById(foundId)
+                : this._deps.gameDataProvider.rustlabs.getDecayDetailsByName(foundId);
+        if (!decayDetails) return this.intlGet(this.guildId, 'couldNotFindDecayDetails', { name: itemName });
 
         const d = decayDetails[3];
         const hp = itemHp ?? d.hp;
-        if (hp > d.hp) return client.intlGet(this.guildId, 'hpExceedMax', { hp, max: d.hp });
+        if (hp > d.hp) return this.intlGet(this.guildId, 'hpExceedMax', { hp, max: d.hp });
 
         const mult = hp / d.hp;
         let str = `${itemName} (${hp}/${d.hp}) `;
@@ -1156,7 +1248,7 @@ export default class RustPlus extends RustPlusLib {
         const addPart = (key: string, label: string, timeKey: string) => {
             if (d[key] === null) return;
             const timeStr = hp === d.hp ? d[key] : Timer.secondsToFullScale(Math.floor(d[timeKey] * mult));
-            parts.push(`${client.intlGet(this.guildId, label)}: ${timeStr}`);
+            parts.push(`${this.intlGet(this.guildId, label)}: ${timeStr}`);
         };
         addPart('decayString', 'decay', 'decay');
         addPart('decayOutsideString', 'outside', 'decayOutside');
@@ -1167,39 +1259,37 @@ export default class RustPlus extends RustPlusLib {
     }
 
     getCommandDespawn(command: string): string {
-        const client = getClient();
         const prefix = this.generalSettings.prefix;
-        const cmdDespawn = `${prefix}${client.intlGet(this.guildId, 'commandSyntaxDespawn')}`;
-        const cmdDespawnEn = `${prefix}${client.intlGet('en', 'commandSyntaxDespawn')}`;
+        const cmdDespawn = `${prefix}${this.intlGet(this.guildId, 'commandSyntaxDespawn')}`;
+        const cmdDespawnEn = `${prefix}${this.intlGet('en', 'commandSyntaxDespawn')}`;
         const rest = command.toLowerCase().startsWith(`${cmdDespawn} `)
             ? command.slice(`${cmdDespawn} `.length).trim()
             : command.slice(`${cmdDespawnEn} `.length).trim();
 
-        const itemId = client.items.getClosestItemIdByName(rest);
-        if (!itemId) return client.intlGet(this.guildId, 'noItemWithNameFound', { name: rest });
-        const itemName = client.items.getName(itemId);
-        const details = client.rustlabs.getDespawnDetailsById(itemId);
-        if (!details) return client.intlGet(this.guildId, 'couldNotFindDespawnDetails', { name: itemName });
-        return client.intlGet(this.guildId, 'despawnTimeOfItem', { item: itemName, time: details[2].timeString });
+        const itemId = this._deps.gameDataProvider.items.getClosestItemIdByName(rest);
+        if (!itemId) return this.intlGet(this.guildId, 'noItemWithNameFound', { name: rest });
+        const itemName = this._deps.gameDataProvider.items.getName(itemId);
+        const details = this._deps.gameDataProvider.rustlabs.getDespawnDetailsById(itemId);
+        if (!details) return this.intlGet(this.guildId, 'couldNotFindDespawnDetails', { name: itemName });
+        return this.intlGet(this.guildId, 'despawnTimeOfItem', { item: itemName, time: details[2].timeString });
     }
 
     getCommandEvents(command: string): any {
-        const client = getClient();
         const prefix = this.generalSettings.prefix;
-        const cmdEvents = `${prefix}${client.intlGet(this.guildId, 'commandSyntaxEvents')}`;
-        const cmdEventsEn = `${prefix}${client.intlGet('en', 'commandSyntaxEvents')}`;
+        const cmdEvents = `${prefix}${this.intlGet(this.guildId, 'commandSyntaxEvents')}`;
+        const cmdEventsEn = `${prefix}${this.intlGet('en', 'commandSyntaxEvents')}`;
 
         const eventKeyMap: Record<string, string> = {
-            [client.intlGet(this.guildId, 'commandSyntaxCargo')]: 'cargo',
-            [client.intlGet('en', 'commandSyntaxCargo')]: 'cargo',
-            [client.intlGet(this.guildId, 'commandSyntaxHeli')]: 'heli',
-            [client.intlGet('en', 'commandSyntaxHeli')]: 'heli',
-            [client.intlGet(this.guildId, 'commandSyntaxSmall')]: 'small',
-            [client.intlGet('en', 'commandSyntaxSmall')]: 'small',
-            [client.intlGet(this.guildId, 'commandSyntaxLarge')]: 'large',
-            [client.intlGet('en', 'commandSyntaxLarge')]: 'large',
-            [client.intlGet(this.guildId, 'commandSyntaxChinook')]: 'chinook',
-            [client.intlGet('en', 'commandSyntaxChinook')]: 'chinook',
+            [this.intlGet(this.guildId, 'commandSyntaxCargo')]: 'cargo',
+            [this.intlGet('en', 'commandSyntaxCargo')]: 'cargo',
+            [this.intlGet(this.guildId, 'commandSyntaxHeli')]: 'heli',
+            [this.intlGet('en', 'commandSyntaxHeli')]: 'heli',
+            [this.intlGet(this.guildId, 'commandSyntaxSmall')]: 'small',
+            [this.intlGet('en', 'commandSyntaxSmall')]: 'small',
+            [this.intlGet(this.guildId, 'commandSyntaxLarge')]: 'large',
+            [this.intlGet('en', 'commandSyntaxLarge')]: 'large',
+            [this.intlGet(this.guildId, 'commandSyntaxChinook')]: 'chinook',
+            [this.intlGet('en', 'commandSyntaxChinook')]: 'chinook',
         };
 
         const rest = command.toLowerCase().startsWith(`${cmdEvents}`)
@@ -1214,19 +1304,19 @@ export default class RustPlus extends RustPlusLib {
                 event = 'all';
                 count = parseInt(token);
             }
+
             if (isNaN(count)) count = 5;
         }
 
         const strings = this.events[event]?.slice(0, count) ?? [];
-        return strings.length > 0 ? strings : client.intlGet(this.guildId, 'noRegisteredEvents');
+        return strings.length > 0 ? strings : this.intlGet(this.guildId, 'noRegisteredEvents');
     }
 
     getCommandHeli(isInfoChannel = false): any {
-        const client = getClient();
         const strings: string[] = [];
         for (const heli of this.mapMarkers.patrolHelicopters) {
-            if (isInfoChannel) return client.intlGet(this.guildId, 'atLocation', { location: heli.location.string });
-            strings.push(client.intlGet(this.guildId, 'patrolHelicopterLocatedAt', { location: heli.location.string }));
+            if (isInfoChannel) return this.intlGet(this.guildId, 'atLocation', { location: heli.location.string });
+            strings.push(this.intlGet(this.guildId, 'patrolHelicopterLocatedAt', { location: heli.location.string }));
         }
 
         if (strings.length === 0) {
@@ -1235,16 +1325,16 @@ export default class RustPlus extends RustPlusLib {
 
             if (!wasOnMap && !wasDestroyed) {
                 return isInfoChannel
-                    ? client.intlGet(this.guildId, 'notActive')
-                    : client.intlGet(this.guildId, 'patrolHelicopterNotCurrentlyOnMap');
+                    ? this.intlGet(this.guildId, 'notActive')
+                    : this.intlGet(this.guildId, 'patrolHelicopterNotCurrentlyOnMap');
             } else if (wasOnMap && !wasDestroyed) {
                 const time = Timer.secondsToFullScale(
                     (Date.now() - wasOnMap.getTime()) / 1000,
                     isInfoChannel ? 's' : '',
                 );
                 return isInfoChannel
-                    ? client.intlGet(this.guildId, 'timeSinceLast', { time })
-                    : client.intlGet(this.guildId, 'timeSincePatrolHelicopterWasOnMap', { time });
+                    ? this.intlGet(this.guildId, 'timeSinceLast', { time })
+                    : this.intlGet(this.guildId, 'timeSincePatrolHelicopterWasOnMap', { time });
             } else if (wasOnMap && wasDestroyed) {
                 const t1 = Timer.secondsToFullScale((Date.now() - wasOnMap.getTime()) / 1000, isInfoChannel ? 's' : '');
                 const t2 = Timer.secondsToFullScale(
@@ -1255,64 +1345,63 @@ export default class RustPlus extends RustPlusLib {
                     ? ` [${this.mapMarkers.patrolHelicopterDestroyedLocation}]`
                     : '';
                 const key = isInfoChannel ? 'timeSinceLastSinceDestroyedShort' : 'timeSinceLastSinceDestroyedLong';
-                return client.intlGet(this.guildId, key, { time1: t1, time2: t2, location: loc });
+                return this.intlGet(this.guildId, key, { time1: t1, time2: t2, location: loc });
             }
         }
         return strings;
     }
 
     getCommandLarge(isInfoChannel = false): any {
-        const client = getClient();
         const strings: string[] = [];
         if (this.mapMarkers.crateLargeOilRigTimer) {
             const time = Timer.getTimeLeftOfTimer(this.mapMarkers.crateLargeOilRigTimer);
             if (time) {
                 if (isInfoChannel)
-                    return client.intlGet(this.guildId, 'timeUntilUnlocksAt', {
+                    return this.intlGet(this.guildId, 'timeUntilUnlocksAt', {
                         time: Timer.getTimeLeftOfTimer(this.mapMarkers.crateLargeOilRigTimer, 's'),
                         location: this.mapMarkers.crateLargeOilRigLocation,
                     });
                 strings.push(
-                    client.intlGet(this.guildId, 'timeBeforeCrateAtLargeOilRigUnlocks', {
+                    this.intlGet(this.guildId, 'timeBeforeCrateAtLargeOilRigUnlocks', {
                         time,
                         location: this.mapMarkers.crateLargeOilRigLocation,
                     }),
                 );
             }
         }
+
         if (strings.length === 0) {
             if (!this.mapMarkers.timeSinceLargeOilRigWasTriggered) {
                 return isInfoChannel
-                    ? client.intlGet(this.guildId, 'noData')
-                    : client.intlGet(this.guildId, 'noDataOnLargeOilRig');
+                    ? this.intlGet(this.guildId, 'noData')
+                    : this.intlGet(this.guildId, 'noDataOnLargeOilRig');
             }
             const time = Timer.secondsToFullScale(
                 (Date.now() - this.mapMarkers.timeSinceLargeOilRigWasTriggered.getTime()) / 1000,
                 isInfoChannel ? 's' : '',
             );
             return isInfoChannel
-                ? client.intlGet(this.guildId, 'timeSinceLastEvent', { time })
-                : client.intlGet(this.guildId, 'timeSinceHeavyScientistsOnLarge', { time });
+                ? this.intlGet(this.guildId, 'timeSinceLastEvent', { time })
+                : this.intlGet(this.guildId, 'timeSinceHeavyScientistsOnLarge', { time });
         }
         return strings;
     }
 
     async getCommandLeader(command: string, callerSteamId: string): Promise<string | null> {
-        const client = getClient();
         const prefix = this.generalSettings.prefix;
-        const cmdLeader = `${prefix}${client.intlGet(this.guildId, 'commandSyntaxLeader')}`;
-        const cmdLeaderEn = `${prefix}${client.intlGet('en', 'commandSyntaxLeader')}`;
+        const cmdLeader = `${prefix}${this.intlGet(this.guildId, 'commandSyntaxLeader')}`;
+        const cmdLeaderEn = `${prefix}${this.intlGet('en', 'commandSyntaxLeader')}`;
         const lc = command.toLowerCase();
 
-        if (!this.generalSettings.leaderCommandEnabled) return client.intlGet(this.guildId, 'leaderCommandIsDisabled');
+        if (!this.generalSettings.leaderCommandEnabled) return this.intlGet(this.guildId, 'leaderCommandIsDisabled');
 
-        const instance = client.getInstance(this.guildId);
+        const instance = await getPersistenceService().readGuildState(this.guildId);
         if (!Object.keys(instance.serverListLite[this.serverId]).includes(this.team.leaderSteamId)) {
             const names = this.team.players
                 .filter((p: any) => Object.keys(instance.serverListLite[this.serverId]).includes(p.steamId))
                 .map((p: any) => p.name)
                 .join(', ');
-            return client.intlGet(this.guildId, 'leaderCommandOnlyWorks', { name: names });
+            return this.intlGet(this.guildId, 'leaderCommandOnlyWorks', { name: names });
         }
 
         const transferLeader = async (targetSteamId: string) => {
@@ -1325,15 +1414,15 @@ export default class RustPlus extends RustPlusLib {
 
         if (lc === cmdLeader || lc === cmdLeaderEn) {
             if (!callerSteamId) return null;
-            if (this.team.leaderSteamId === callerSteamId) return client.intlGet(this.guildId, 'youAreAlreadyLeader');
+            if (this.team.leaderSteamId === callerSteamId) return this.intlGet(this.guildId, 'youAreAlreadyLeader');
             if (
                 this.generalSettings.leaderCommandOnlyForPaired &&
                 !Object.keys(instance.serverListLite[this.serverId]).includes(callerSteamId)
             ) {
-                return client.intlGet(this.guildId, 'youAreNotPairedWithServer');
+                return this.intlGet(this.guildId, 'youAreNotPairedWithServer');
             }
             await transferLeader(callerSteamId);
-            return client.intlGet(this.guildId, 'leaderTransferred', { name: this.team.getPlayer(callerSteamId).name });
+            return this.intlGet(this.guildId, 'leaderTransferred', { name: this.team.getPlayer(callerSteamId).name });
         }
 
         const name = lc.startsWith(`${cmdLeader} `)
@@ -1342,36 +1431,35 @@ export default class RustPlus extends RustPlusLib {
         for (const player of this.team.players) {
             if (player.name.includes(name)) {
                 if (this.team.leaderSteamId === player.steamId)
-                    return client.intlGet(this.guildId, 'leaderAlreadyLeader', { name: player.name });
+                    return this.intlGet(this.guildId, 'leaderAlreadyLeader', { name: player.name });
                 if (
                     this.generalSettings.leaderCommandOnlyForPaired &&
                     !Object.keys(instance.serverListLite[this.serverId]).includes(player.steamId)
                 ) {
-                    return client.intlGet(this.guildId, 'playerNotPairedWithServer', { name: player.name });
+                    return this.intlGet(this.guildId, 'playerNotPairedWithServer', { name: player.name });
                 }
                 await transferLeader(player.steamId);
-                return client.intlGet(this.guildId, 'leaderTransferred', { name: player.name });
+                return this.intlGet(this.guildId, 'leaderTransferred', { name: player.name });
             }
         }
-        return client.intlGet(this.guildId, 'couldNotIdentifyMember', { name });
+        return this.intlGet(this.guildId, 'couldNotIdentifyMember', { name });
     }
 
     async getCommandMarker(command: string, callerSteamId: string): Promise<string | null> {
-        const client = getClient();
         const prefix = this.generalSettings.prefix;
-        const cmdMarker = `${prefix}${client.intlGet(this.guildId, 'commandSyntaxMarker')}`;
-        const cmdMarkerEn = `${prefix}${client.intlGet('en', 'commandSyntaxMarker')}`;
-        const cmdMarkers = `${prefix}${client.intlGet(this.guildId, 'commandSyntaxMarkers')}`;
-        const cmdMarkersEn = `${prefix}${client.intlGet('en', 'commandSyntaxMarkers')}`;
-        const cmdAdd = client.intlGet(this.guildId, 'commandSyntaxAdd');
-        const cmdAddEn = client.intlGet('en', 'commandSyntaxAdd');
-        const cmdRemove = client.intlGet(this.guildId, 'commandSyntaxRemove');
-        const cmdRemoveEn = client.intlGet('en', 'commandSyntaxRemove');
+        const cmdMarker = `${prefix}${this.intlGet(this.guildId, 'commandSyntaxMarker')}`;
+        const cmdMarkerEn = `${prefix}${this.intlGet('en', 'commandSyntaxMarker')}`;
+        const cmdMarkers = `${prefix}${this.intlGet(this.guildId, 'commandSyntaxMarkers')}`;
+        const cmdMarkersEn = `${prefix}${this.intlGet('en', 'commandSyntaxMarkers')}`;
+        const cmdAdd = this.intlGet(this.guildId, 'commandSyntaxAdd');
+        const cmdAddEn = this.intlGet('en', 'commandSyntaxAdd');
+        const cmdRemove = this.intlGet(this.guildId, 'commandSyntaxRemove');
+        const cmdRemoveEn = this.intlGet('en', 'commandSyntaxRemove');
         const lc = command.toLowerCase();
 
         if (lc === cmdMarkers || lc === cmdMarkersEn) {
             const parts = Object.entries(this.markers).map(([n, m]: any) => `${n} [${m.location}]`);
-            return parts.length > 0 ? parts.join(', ') : client.intlGet(this.guildId, 'noRegisteredMarkers');
+            return parts.length > 0 ? parts.join(', ') : this.intlGet(this.guildId, 'noRegisteredMarkers');
         }
 
         const rest = lc.startsWith(`${cmdMarker} `)
@@ -1386,31 +1474,35 @@ export default class RustPlus extends RustPlusLib {
             if (!(await this.isResponseValid(teamInfo))) return null;
             for (const player of teamInfo.teamInfo.members) {
                 if (player.steamId.toString() === callerSteamId) {
-                    const instance = client.getInstance(this.guildId);
+                    const instance = await getPersistenceService().readGuildState(this.guildId);
                     const location = GameMap.getPos(player.x, player.y, this.info.correctedMapSize, this);
                     instance.serverList[this.serverId].markers[name] = {
                         x: player.x,
                         y: player.y,
                         location: location.location,
                     };
-                    client.setInstance(this.guildId, instance);
+                    await getPersistenceService().upsertMarker(this.guildId, this.serverId, name, {
+                        x: player.x,
+                        y: player.y,
+                        location: location.location,
+                    });
                     this.markers[name] = { x: player.x, y: player.y, location: location.location };
-                    return client.intlGet(this.guildId, 'markerAdded', { name, location: location.location });
+                    return this.intlGet(this.guildId, 'markerAdded', { name, location: location.location });
                 }
             }
         } else if (
             subcommand.toLowerCase() === cmdRemove.toLowerCase() ||
             subcommand.toLowerCase() === cmdRemoveEn.toLowerCase()
         ) {
-            if (!(name in this.markers)) return client.intlGet(this.guildId, 'markerDoesNotExist', { name });
+            if (!(name in this.markers)) return this.intlGet(this.guildId, 'markerDoesNotExist', { name });
             const location = this.markers[name].location;
-            const instance = client.getInstance(this.guildId);
+            const instance = await getPersistenceService().readGuildState(this.guildId);
             delete this.markers[name];
             delete instance.serverList[this.serverId].markers[name];
-            client.setInstance(this.guildId, instance);
-            return client.intlGet(this.guildId, 'markerRemoved', { name, location });
+            await getPersistenceService().deleteMarker(this.guildId, this.serverId, name);
+            return this.intlGet(this.guildId, 'markerRemoved', { name, location });
         } else {
-            if (!(rest in this.markers)) return client.intlGet(this.guildId, 'markerDoesNotExist', { name: rest });
+            if (!(rest in this.markers)) return this.intlGet(this.guildId, 'markerDoesNotExist', { name: rest });
             const teamInfo = await this.getTeamInfoAsync();
             if (!(await this.isResponseValid(teamInfo))) return null;
             for (const player of teamInfo.teamInfo.members) {
@@ -1418,7 +1510,7 @@ export default class RustPlus extends RustPlusLib {
                     const m = this.markers[rest];
                     const dir = GameMap.getAngleBetweenPoints(player.x, player.y, m.x, m.y);
                     const dist = Math.floor(GameMap.getDistance(player.x, player.y, m.x, m.y));
-                    return client.intlGet(this.guildId, 'markerLocation', {
+                    return this.intlGet(this.guildId, 'markerLocation', {
                         name: rest,
                         location: m.location,
                         distance: dist,
@@ -1431,20 +1523,19 @@ export default class RustPlus extends RustPlusLib {
         return null;
     }
 
-    getCommandMarket(command: string): string | null {
-        const client = getClient();
-        const instance = client.getInstance(this.guildId);
+    async getCommandMarket(command: string): Promise<string | null> {
+        const instance = await getPersistenceService().readGuildState(this.guildId);
         const prefix = this.generalSettings.prefix;
-        const cmdMarket = `${prefix}${client.intlGet(this.guildId, 'commandSyntaxMarket')}`;
-        const cmdMarketEn = `${prefix}${client.intlGet('en', 'commandSyntaxMarket')}`;
-        const cmdSearch = client.intlGet(this.guildId, 'commandSyntaxSearch');
-        const cmdSearchEn = client.intlGet('en', 'commandSyntaxSearch');
-        const cmdSub = client.intlGet(this.guildId, 'commandSyntaxSubscribe');
-        const cmdSubEn = client.intlGet('en', 'commandSyntaxSubscribe');
-        const cmdUnsub = client.intlGet(this.guildId, 'commandSyntaxUnsubscribe');
-        const cmdUnsubEn = client.intlGet('en', 'commandSyntaxUnsubscribe');
-        const cmdList = client.intlGet(this.guildId, 'commandSyntaxList');
-        const cmdListEn = client.intlGet('en', 'commandSyntaxList');
+        const cmdMarket = `${prefix}${this.intlGet(this.guildId, 'commandSyntaxMarket')}`;
+        const cmdMarketEn = `${prefix}${this.intlGet('en', 'commandSyntaxMarket')}`;
+        const cmdSearch = this.intlGet(this.guildId, 'commandSyntaxSearch');
+        const cmdSearchEn = this.intlGet('en', 'commandSyntaxSearch');
+        const cmdSub = this.intlGet(this.guildId, 'commandSyntaxSubscribe');
+        const cmdSubEn = this.intlGet('en', 'commandSyntaxSubscribe');
+        const cmdUnsub = this.intlGet(this.guildId, 'commandSyntaxUnsubscribe');
+        const cmdUnsubEn = this.intlGet('en', 'commandSyntaxUnsubscribe');
+        const cmdList = this.intlGet(this.guildId, 'commandSyntaxList');
+        const cmdListEn = this.intlGet('en', 'commandSyntaxList');
 
         const rest = command.toLowerCase().startsWith(`${cmdMarket} `)
             ? command.slice(`${cmdMarket} `.length).trim()
@@ -1454,17 +1545,20 @@ export default class RustPlus extends RustPlusLib {
         const orderType = args.replace(/ .*/, '');
         const name = args.slice(orderType.length + 1);
 
-        const validOrders = ['all', 'buy', 'sell'];
+        const validOrders = ['all', 'buy', 'sell'] as const;
+        type MarketOrderType = (typeof validOrders)[number];
+        const isMarketOrderType = (orderType: string): orderType is MarketOrderType =>
+            (validOrders as readonly string[]).includes(orderType);
         const resolveItem = (n: string) => {
-            const itemId = client.items.getClosestItemIdByName(n);
-            if (!itemId) return { err: client.intlGet(this.guildId, 'noItemWithNameFound', { name: n }) };
-            return { itemId, itemName: client.items.getName(itemId) };
+            const itemId = this._deps.gameDataProvider.items.getClosestItemIdByName(n);
+            if (!itemId) return { err: this.intlGet(this.guildId, 'noItemWithNameFound', { name: n }) };
+            return { itemId, itemName: this._deps.gameDataProvider.items.getName(itemId) };
         };
 
         const sub = subcommand.toLowerCase();
         if (sub === cmdSearch.toLowerCase() || sub === cmdSearchEn.toLowerCase()) {
-            if (!validOrders.includes(orderType))
-                return client.intlGet(this.guildId, 'notAValidOrderType', { order: orderType });
+            if (!isMarketOrderType(orderType))
+                return this.intlGet(this.guildId, 'notAValidOrderType', { order: orderType });
             const r = resolveItem(name);
             if (r.err) return r.err;
             const locations: string[] = [];
@@ -1472,8 +1566,8 @@ export default class RustPlus extends RustPlusLib {
                 if (!vm.sellOrders) continue;
                 for (const order of vm.sellOrders) {
                     if (order.amountInStock === 0) continue;
-                    const oi = Object.hasOwn(client.items.items, order.itemId.toString()) ? order.itemId : null;
-                    const ci = Object.hasOwn(client.items.items, order.currencyId.toString()) ? order.currencyId : null;
+                    const oi = Object.hasOwn(this._deps.gameDataProvider.items.items, order.itemId.toString()) ? order.itemId : null;
+                    const ci = Object.hasOwn(this._deps.gameDataProvider.items.items, order.currencyId.toString()) ? order.currencyId : null;
                     const match =
                         (orderType === 'all' && (oi === parseInt(r.itemId) || ci === parseInt(r.itemId))) ||
                         (orderType === 'buy' && ci === parseInt(r.itemId)) ||
@@ -1481,69 +1575,67 @@ export default class RustPlus extends RustPlusLib {
                     if (match && !locations.includes(vm.location.location)) locations.push(vm.location.location);
                 }
             }
-            return locations.length > 0 ? locations.join(', ') : client.intlGet(this.guildId, 'noItemFound');
+            return locations.length > 0 ? locations.join(', ') : this.intlGet(this.guildId, 'noItemFound');
         } else if (sub === cmdSub.toLowerCase() || sub === cmdSubEn.toLowerCase()) {
-            if (!validOrders.includes(orderType))
-                return client.intlGet(this.guildId, 'notAValidOrderType', { order: orderType });
+            if (!isMarketOrderType(orderType))
+                return this.intlGet(this.guildId, 'notAValidOrderType', { order: orderType });
             const r = resolveItem(name);
             if (r.err) return r.err;
             if (instance.marketSubscriptionList[orderType].includes(r.itemId))
-                return client.intlGet(this.guildId, 'alreadySubscribedToItem', { name: r.itemName });
+                return this.intlGet(this.guildId, 'alreadySubscribedToItem', { name: r.itemName });
             instance.marketSubscriptionList[orderType].push(r.itemId);
             this.firstPollItems[orderType].push(r.itemId);
-            client.setInstance(this.guildId, instance);
-            return client.intlGet(this.guildId, 'justSubscribedToItem', { name: r.itemName });
+            await getPersistenceService().addMarketSubscription(this.guildId, orderType, r.itemId);
+            return this.intlGet(this.guildId, 'justSubscribedToItem', { name: r.itemName });
         } else if (sub === cmdUnsub.toLowerCase() || sub === cmdUnsubEn.toLowerCase()) {
-            if (!validOrders.includes(orderType))
-                return client.intlGet(this.guildId, 'notAValidOrderType', { order: orderType });
+            if (!isMarketOrderType(orderType))
+                return this.intlGet(this.guildId, 'notAValidOrderType', { order: orderType });
             const r = resolveItem(name);
             if (r.err) return r.err;
             if (!instance.marketSubscriptionList[orderType].includes(r.itemId))
-                return client.intlGet(this.guildId, 'notExistInSubscription', { name: r.itemName });
+                return this.intlGet(this.guildId, 'notExistInSubscription', { name: r.itemName });
             instance.marketSubscriptionList[orderType] = instance.marketSubscriptionList[orderType].filter(
                 (e: any) => e !== r.itemId,
             );
-            client.setInstance(this.guildId, instance);
-            return client.intlGet(this.guildId, 'removedSubscribeItem', { name: r.itemName });
+            await getPersistenceService().removeMarketSubscription(this.guildId, orderType, r.itemId);
+            return this.intlGet(this.guildId, 'removedSubscribeItem', { name: r.itemName });
         } else if (sub === cmdList.toLowerCase() || sub === cmdListEn.toLowerCase()) {
             const parts: string[] = [];
             for (const [ot, ids] of Object.entries(instance.marketSubscriptionList) as [string, any[]][]) {
                 if (ids.length === 0) continue;
                 parts.push(
-                    `${client.intlGet(this.guildId, ot)}: ${ids.map((id: any) => `${client.items.getName(id)} (${id})`).join(', ')}`,
+                    `${this.intlGet(this.guildId, ot)}: ${ids.map((id: any) => `${this._deps.gameDataProvider.items.getName(id)} (${id})`).join(', ')}`,
                 );
             }
-            return parts.length > 0 ? parts.join(' ') : client.intlGet(this.guildId, 'subscriptionListEmpty');
+            return parts.length > 0 ? parts.join(' ') : this.intlGet(this.guildId, 'subscriptionListEmpty');
         }
         return null;
     }
 
-    getCommandMute(): string {
-        const client = getClient();
-        const instance = client.getInstance(this.guildId);
+    async getCommandMute(): Promise<string> {
+        const instance = await getPersistenceService().readGuildState(this.guildId);
         instance.generalSettings.muteInGameBotMessages = true;
         this.generalSettings.muteInGameBotMessages = true;
-        client.setInstance(this.guildId, instance);
-        return client.intlGet(this.guildId, 'inGameBotMessagesMuted');
+        await getPersistenceService().setGeneralSetting(this.guildId, 'muteInGameBotMessages', true);
+        return this.intlGet(this.guildId, 'inGameBotMessagesMuted');
     }
 
-    getCommandNote(command: string): any {
-        const client = getClient();
-        const instance = client.getInstance(this.guildId);
+    async getCommandNote(command: string): Promise<any> {
+        const instance = await getPersistenceService().readGuildState(this.guildId);
         const prefix = this.generalSettings.prefix;
-        const cmdNote = `${prefix}${client.intlGet(this.guildId, 'commandSyntaxNote')}`;
-        const cmdNoteEn = `${prefix}${client.intlGet('en', 'commandSyntaxNote')}`;
-        const cmdNotes = `${prefix}${client.intlGet(this.guildId, 'commandSyntaxNotes')}`;
-        const cmdNotesEn = `${prefix}${client.intlGet('en', 'commandSyntaxNotes')}`;
-        const cmdAdd = client.intlGet(this.guildId, 'commandSyntaxAdd');
-        const cmdAddEn = client.intlGet('en', 'commandSyntaxAdd');
-        const cmdRemove = client.intlGet(this.guildId, 'commandSyntaxRemove');
-        const cmdRemoveEn = client.intlGet('en', 'commandSyntaxRemove');
+        const cmdNote = `${prefix}${this.intlGet(this.guildId, 'commandSyntaxNote')}`;
+        const cmdNoteEn = `${prefix}${this.intlGet('en', 'commandSyntaxNote')}`;
+        const cmdNotes = `${prefix}${this.intlGet(this.guildId, 'commandSyntaxNotes')}`;
+        const cmdNotesEn = `${prefix}${this.intlGet('en', 'commandSyntaxNotes')}`;
+        const cmdAdd = this.intlGet(this.guildId, 'commandSyntaxAdd');
+        const cmdAddEn = this.intlGet('en', 'commandSyntaxAdd');
+        const cmdRemove = this.intlGet(this.guildId, 'commandSyntaxRemove');
+        const cmdRemoveEn = this.intlGet('en', 'commandSyntaxRemove');
         const lc = command.toLowerCase();
 
         if (lc === cmdNotes || lc === cmdNotesEn) {
             const notes = instance.serverList[this.serverId].notes;
-            if (Object.keys(notes).length === 0) return client.intlGet(this.guildId, 'noSavedNotes');
+            if (Object.keys(notes).length === 0) return this.intlGet(this.guildId, 'noSavedNotes');
             return Object.entries(notes).map(([id, note]) => `${id}: ${note}`);
         }
 
@@ -1557,58 +1649,55 @@ export default class RustPlus extends RustPlusLib {
             let index = 0;
             while (Object.keys(instance.serverList[this.serverId].notes).map(Number).includes(index)) index++;
             instance.serverList[this.serverId].notes[index] = value;
-            client.setInstance(this.guildId, instance);
-            return client.intlGet(this.guildId, 'noteSaved');
+            await getPersistenceService().upsertNote(this.guildId, this.serverId, index, value);
+            return this.intlGet(this.guildId, 'noteSaved');
         } else if (
             subcommand.toLowerCase() === cmdRemove.toLowerCase() ||
             subcommand.toLowerCase() === cmdRemoveEn.toLowerCase()
         ) {
             const id = parseInt(value.trim());
-            if (isNaN(id)) return client.intlGet(this.guildId, 'noteIdInvalid');
+            if (isNaN(id)) return this.intlGet(this.guildId, 'noteIdInvalid');
             if (!Object.keys(instance.serverList[this.serverId].notes).map(Number).includes(id))
-                return client.intlGet(this.guildId, 'noteIdDoesNotExist', { id });
+                return this.intlGet(this.guildId, 'noteIdDoesNotExist', { id });
             delete instance.serverList[this.serverId].notes[id];
-            client.setInstance(this.guildId, instance);
-            return client.intlGet(this.guildId, 'noteIdWasRemoved', { id });
+            await getPersistenceService().deleteNote(this.guildId, this.serverId, id);
+            return this.intlGet(this.guildId, 'noteIdWasRemoved', { id });
         }
         return null;
     }
 
     getCommandOffline(): string {
-        const client = getClient();
         const offline = this.team.players.filter((p: any) => !p.isOnline);
         const amount = `(${offline.length}/${this.team.players.length}) `;
         const names = offline.map((p: any) => p.name).join(', ');
-        return names ? `${amount}${names}.` : `${amount}${client.intlGet(this.guildId, 'noOneIsOffline')}`;
+        return names ? `${amount}${names}.` : `${amount}${this.intlGet(this.guildId, 'noOneIsOffline')}`;
     }
 
     getCommandOnline(): string {
-        const client = getClient();
         const online = this.team.players.filter((p: any) => p.isOnline);
         const amount = `(${online.length}/${this.team.players.length}) `;
         const names = online.map((p: any) => p.name).join(', ');
-        return names ? `${amount}${names}.` : `${amount}${client.intlGet(this.guildId, 'noOneIsOnline')}`;
+        return names ? `${amount}${names}.` : `${amount}${this.intlGet(this.guildId, 'noOneIsOnline')}`;
     }
 
-    getCommandPlayer(command: string): string | null {
-        const client = getClient();
-        const instance = client.getInstance(this.guildId);
+    async getCommandPlayer(command: string): Promise<string | null> {
+        const instance = await getPersistenceService().readGuildState(this.guildId);
         const battlemetricsId = instance.serverList[this.serverId].battlemetricsId;
         const prefix = this.generalSettings.prefix;
-        const cmdPlayer = `${prefix}${client.intlGet(this.guildId, 'commandSyntaxPlayer')}`;
-        const cmdPlayerEn = `${prefix}${client.intlGet('en', 'commandSyntaxPlayer')}`;
-        const cmdPlayers = `${prefix}${client.intlGet(this.guildId, 'commandSyntaxPlayers')}`;
-        const cmdPlayersEn = `${prefix}${client.intlGet('en', 'commandSyntaxPlayers')}`;
+        const cmdPlayer = `${prefix}${this.intlGet(this.guildId, 'commandSyntaxPlayer')}`;
+        const cmdPlayerEn = `${prefix}${this.intlGet('en', 'commandSyntaxPlayer')}`;
+        const cmdPlayers = `${prefix}${this.intlGet(this.guildId, 'commandSyntaxPlayers')}`;
+        const cmdPlayersEn = `${prefix}${this.intlGet('en', 'commandSyntaxPlayers')}`;
         const lc = command.toLowerCase();
 
-        const bmInstance = client.battlemetricsInstances[battlemetricsId];
+        const bmInstance = this._deps.battlemetricsManager.battlemetricsInstances[battlemetricsId];
         if (!bmInstance?.lastUpdateSuccessful)
-            return client.intlGet(this.guildId, 'battlemetricsInstanceCouldNotBeFound', { id: battlemetricsId });
+            return this.intlGet(this.guildId, 'battlemetricsInstanceCouldNotBeFound', { id: battlemetricsId });
 
         let foundPlayers: string[] = [];
         if (lc === cmdPlayers || lc === cmdPlayersEn) {
             foundPlayers = bmInstance.getOnlinePlayerIdsOrderedByTime();
-            if (foundPlayers.length === 0) return client.intlGet(this.guildId, 'couldNotFindAnyPlayers');
+            if (foundPlayers.length === 0) return this.intlGet(this.guildId, 'couldNotFindAnyPlayers');
         } else if (lc.startsWith(`${cmdPlayer} `) || lc.startsWith(`${cmdPlayerEn} `)) {
             const name = lc.startsWith(`${cmdPlayer} `)
                 ? command.slice(`${cmdPlayer} `.length).trim()
@@ -1616,7 +1705,7 @@ export default class RustPlus extends RustPlusLib {
             foundPlayers = bmInstance
                 .getOnlinePlayerIdsOrderedByTime()
                 .filter((id: string) => bmInstance.players[id]['name'].includes(name));
-            if (foundPlayers.length === 0) return client.intlGet(this.guildId, 'couldNotFindPlayer', { name });
+            if (foundPlayers.length === 0) return this.intlGet(this.guildId, 'couldNotFindPlayer', { name });
         } else {
             return null;
         }
@@ -1624,7 +1713,7 @@ export default class RustPlus extends RustPlusLib {
         const trademark = this.generalSettings.trademark;
         const trademarkStr = trademark === 'NOT SHOWING' ? '' : `${trademark} | `;
         const maxLen = 128 - trademarkStr.length;
-        const leftLen = `...xxx ${client.intlGet(this.guildId, 'more')}.`.length;
+        const leftLen = `...xxx ${this.intlGet(this.guildId, 'more')}.`.length;
 
         let str = '';
         let idx = 0;
@@ -1639,43 +1728,41 @@ export default class RustPlus extends RustPlusLib {
         if (str) {
             str = str.slice(0, -2);
             return idx < foundPlayers.length
-                ? client.intlGet(this.guildId, 'morePlayers', { players: str, number: foundPlayers.length - idx })
+                ? this.intlGet(this.guildId, 'morePlayers', { players: str, number: foundPlayers.length - idx })
                 : `${str}.`;
         }
         return null;
     }
 
     getCommandPop(isInfoChannel = false): string {
-        const client = getClient();
         if (isInfoChannel) {
             return `${this.info.players}${this.info.isQueue() ? `(${this.info.queuedPlayers})` : ''}/${this.info.maxPlayers}`;
         }
-        const str = client.intlGet(this.guildId, 'populationPlayers', {
+        const str = this.intlGet(this.guildId, 'populationPlayers', {
             current: this.info.players,
             max: this.info.maxPlayers,
         });
         const queue = this.info.isQueue()
-            ? ` ${client.intlGet(this.guildId, 'populationQueue', { number: this.info.queuedPlayers })}`
+            ? ` ${this.intlGet(this.guildId, 'populationQueue', { number: this.info.queuedPlayers })}`
             : '';
         return `${str}${queue}`;
     }
 
     async getCommandProx(command: string, callerSteamId: string): Promise<string | null> {
-        const client = getClient();
         const prefix = this.generalSettings.prefix;
-        const cmdProx = `${prefix}${client.intlGet(this.guildId, 'commandSyntaxProx')}`;
-        const cmdProxEn = `${prefix}${client.intlGet('en', 'commandSyntaxProx')}`;
+        const cmdProx = `${prefix}${this.intlGet(this.guildId, 'commandSyntaxProx')}`;
+        const cmdProxEn = `${prefix}${this.intlGet('en', 'commandSyntaxProx')}`;
         const lc = command.toLowerCase();
 
         const teamInfo = await this.getTeamInfoAsync();
         if (!(await this.isResponseValid(teamInfo))) return null;
-        TeamHandler.handler(this, client, teamInfo.teamInfo);
+        await TeamHandler.processTeamUpdate(this, this._deps.localizationService, teamInfo.teamInfo);
         this.team.updateTeam(teamInfo.teamInfo);
         const caller = this.team.getPlayer(callerSteamId);
 
         if (lc === cmdProx || lc === cmdProxEn) {
             const alive = this.team.players.filter((p: any) => p.steamId !== callerSteamId && p.isAlive);
-            if (alive.length === 0) return client.intlGet(this.guildId, 'onlyOneInTeam');
+            if (alive.length === 0) return this.intlGet(this.guildId, 'onlyOneInTeam');
             const closest = alive
                 .sort(
                     (a: any, b: any) =>
@@ -1687,7 +1774,7 @@ export default class RustPlus extends RustPlusLib {
                 (p: any) =>
                     `${p.name} (${Math.floor(GameMap.getDistance(p.x, p.y, caller.x, caller.y))}m [${p.pos.location}])`,
             );
-            return parts.length > 0 ? `${parts.join(', ')}.` : client.intlGet(this.guildId, 'allTeammatesAreDead');
+            return parts.length > 0 ? `${parts.join(', ')}.` : this.intlGet(this.guildId, 'allTeammatesAreDead');
         }
 
         const memberName = lc.startsWith(`${cmdProx} `)
@@ -1695,7 +1782,7 @@ export default class RustPlus extends RustPlusLib {
             : command.slice(`${cmdProxEn} `.length).trim();
         for (const player of this.team.players) {
             if (player.name.includes(memberName)) {
-                return client.intlGet(this.guildId, 'proxLocation', {
+                return this.intlGet(this.guildId, 'proxLocation', {
                     name: player.name,
                     distance: Math.floor(GameMap.getDistance(caller.x, caller.y, player.x, player.y)),
                     caller: caller.name,
@@ -1704,14 +1791,13 @@ export default class RustPlus extends RustPlusLib {
                 });
             }
         }
-        return client.intlGet(this.guildId, 'couldNotIdentifyMember', { name: memberName });
+        return this.intlGet(this.guildId, 'couldNotIdentifyMember', { name: memberName });
     }
 
     getCommandRecycle(command: string): string {
-        const client = getClient();
         const prefix = this.generalSettings.prefix;
-        const cmdRecycle = `${prefix}${client.intlGet(this.guildId, 'commandSyntaxRecycle')}`;
-        const cmdRecycleEn = `${prefix}${client.intlGet('en', 'commandSyntaxRecycle')}`;
+        const cmdRecycle = `${prefix}${this.intlGet(this.guildId, 'commandSyntaxRecycle')}`;
+        const cmdRecycleEn = `${prefix}${this.intlGet('en', 'commandSyntaxRecycle')}`;
         const rest = command.toLowerCase().startsWith(`${cmdRecycle} `)
             ? command.slice(`${cmdRecycle} `.length).trim()
             : command.slice(`${cmdRecycleEn} `.length).trim();
@@ -1722,133 +1808,129 @@ export default class RustPlus extends RustPlusLib {
         const itemName = isNum ? rest.slice(0, -lastWord.length).trim() : rest;
         const quantity = isNum ? parseInt(lastWord) : 1;
 
-        const itemId = client.items.getClosestItemIdByName(itemName);
-        if (!itemId || itemName === '') return client.intlGet(this.guildId, 'noItemWithNameFound', { name: itemName });
-        const name = client.items.getName(itemId);
-        const recycleDetails = client.rustlabs.getRecycleDetailsById(itemId);
-        if (!recycleDetails) return client.intlGet(this.guildId, 'couldNotFindRecycleDetails', { name });
+        const itemId = this._deps.gameDataProvider.items.getClosestItemIdByName(itemName);
+        if (!itemId || itemName === '') return this.intlGet(this.guildId, 'noItemWithNameFound', { name: itemName });
+        const name = this._deps.gameDataProvider.items.getName(itemId);
+        const recycleDetails = this._deps.gameDataProvider.rustlabs.getRecycleDetailsById(itemId);
+        if (!recycleDetails) return this.intlGet(this.guildId, 'couldNotFindRecycleDetails', { name });
 
-        const recycleData = client.rustlabs.getRecycleDataFromArray([
+        const recycleData = this._deps.gameDataProvider.rustlabs.getRecycleDataFromArray([
             { itemId: recycleDetails[0], quantity, itemIsBlueprint: false },
         ]);
         let str = `${name}: `;
-        for (const item of recycleData) str += `${client.items.getName(item.itemId)} x${item.quantity}, `;
+        for (const item of (recycleData['recycler'] ?? [])) str += `${this._deps.gameDataProvider.items.getName(item.itemId)} x${item.quantity}, `;
         return str.slice(0, -2);
     }
 
     getCommandResearch(command: string): string {
-        const client = getClient();
         const prefix = this.generalSettings.prefix;
-        const cmdResearch = `${prefix}${client.intlGet(this.guildId, 'commandSyntaxResearch')}`;
-        const cmdResearchEn = `${prefix}${client.intlGet('en', 'commandSyntaxResearch')}`;
+        const cmdResearch = `${prefix}${this.intlGet(this.guildId, 'commandSyntaxResearch')}`;
+        const cmdResearchEn = `${prefix}${this.intlGet('en', 'commandSyntaxResearch')}`;
         const itemInput = command.toLowerCase().startsWith(`${cmdResearch} `)
             ? command.slice(`${cmdResearch} `.length).trim()
             : command.slice(`${cmdResearchEn} `.length).trim();
 
-        const itemId = client.items.getClosestItemIdByName(itemInput);
-        if (!itemId || !itemInput) return client.intlGet(this.guildId, 'noItemWithNameFound', { name: itemInput });
-        const itemName = client.items.getName(itemId);
-        const details = client.rustlabs.getResearchDetailsById(itemId);
-        if (!details) return client.intlGet(this.guildId, 'couldNotFindResearchDetails', { name: itemName });
+        const itemId = this._deps.gameDataProvider.items.getClosestItemIdByName(itemInput);
+        if (!itemId || !itemInput) return this.intlGet(this.guildId, 'noItemWithNameFound', { name: itemInput });
+        const itemName = this._deps.gameDataProvider.items.getName(itemId);
+        const details = this._deps.gameDataProvider.rustlabs.getResearchDetailsById(itemId);
+        if (!details) return this.intlGet(this.guildId, 'couldNotFindResearchDetails', { name: itemName });
 
         let str = `${itemName}: `;
         if (details[2].researchTable !== null)
-            str += `${client.intlGet(this.guildId, 'researchTable')} (${details[2].researchTable})`;
+            str += `${this.intlGet(this.guildId, 'researchTable')} (${details[2].researchTable})`;
         if (details[2].workbench !== null) {
             const wb = details[2].workbench;
-            str += `, ${client.items.getName(wb.type)} (${wb.scrap} (${wb.totalScrap}))`;
+            str += `, ${this._deps.gameDataProvider.items.getName(wb.type)} (${wb.scrap} (${wb.totalScrap}))`;
         }
         return `${str}.`;
     }
 
     async getCommandSend(command: string, callerName: string): Promise<string> {
-        const client = getClient();
         const prefix = this.generalSettings.prefix;
-        const cmdSend = `${prefix}${client.intlGet(this.guildId, 'commandSyntaxSend')}`;
-        const cmdSendEn = `${prefix}${client.intlGet('en', 'commandSyntaxSend')}`;
+        const cmdSend = `${prefix}${this.intlGet(this.guildId, 'commandSyntaxSend')}`;
+        const cmdSendEn = `${prefix}${this.intlGet('en', 'commandSyntaxSend')}`;
         const rest = command.toLowerCase().startsWith(`${cmdSend} `)
             ? command.slice(`${cmdSend} `.length).trim()
             : command.slice(`${cmdSendEn} `.length).trim();
         const name = rest.replace(/ .*/, '');
         const message = rest.slice(name.length + 1).trim();
 
-        if (!name || !message) return client.intlGet(this.guildId, 'missingArguments');
+        if (!name || !message) return this.intlGet(this.guildId, 'missingArguments');
 
-        const credentials = InstanceUtils.readCredentialsFile(this.guildId);
+        const credentials = await getPersistenceService().getCredentials(this.guildId);
         for (const player of this.team.players) {
             if (player.name.includes(name)) {
                 if (!(player.steamId in credentials))
-                    return client.intlGet(this.guildId, 'userNotRegistered', { user: player.name });
+                    return this.intlGet(this.guildId, 'userNotRegistered', { user: player.name });
                 const discordUserId = credentials[player.steamId].discordUserId;
                 const user = await DiscordTools.getUserById(this.guildId, discordUserId);
-                if (!user) return client.intlGet(this.guildId, 'couldNotFindUser', { userId: discordUserId });
-                await client.messageSend(user, {
-                    embeds: [DiscordEmbeds.getUserSendEmbed(this.guildId, this.serverId, callerName, message)],
+                if (!user) return this.intlGet(this.guildId, 'couldNotFindUser', { userId: discordUserId });
+                await this._deps.discordNotifier.messageSend(user, {
+                    embeds: [await DiscordEmbeds.getUserSendEmbed(this.guildId, this.serverId, callerName, message)],
                 });
-                return client.intlGet(this.guildId, 'messageWasSent');
+                return this.intlGet(this.guildId, 'messageWasSent');
             }
         }
-        return client.intlGet(this.guildId, 'couldNotIdentifyMember', { name });
+        return this.intlGet(this.guildId, 'couldNotIdentifyMember', { name });
     }
 
     getCommandSmall(isInfoChannel = false): any {
-        const client = getClient();
         const strings: string[] = [];
         if (this.mapMarkers.crateSmallOilRigTimer) {
             const time = Timer.getTimeLeftOfTimer(this.mapMarkers.crateSmallOilRigTimer);
             if (time) {
                 if (isInfoChannel)
-                    return client.intlGet(this.guildId, 'timeUntilUnlocksAt', {
+                    return this.intlGet(this.guildId, 'timeUntilUnlocksAt', {
                         time: Timer.getTimeLeftOfTimer(this.mapMarkers.crateSmallOilRigTimer, 's'),
                         location: this.mapMarkers.crateSmallOilRigLocation,
                     });
                 strings.push(
-                    client.intlGet(this.guildId, 'timeBeforeCrateAtSmallOilRigUnlocks', {
+                    this.intlGet(this.guildId, 'timeBeforeCrateAtSmallOilRigUnlocks', {
                         time,
                         location: this.mapMarkers.crateSmallOilRigLocation,
                     }),
                 );
             }
         }
+
         if (strings.length === 0) {
             if (!this.mapMarkers.timeSinceSmallOilRigWasTriggered) {
                 return isInfoChannel
-                    ? client.intlGet(this.guildId, 'noData')
-                    : client.intlGet(this.guildId, 'noDataOnSmallOilRig');
+                    ? this.intlGet(this.guildId, 'noData')
+                    : this.intlGet(this.guildId, 'noDataOnSmallOilRig');
             }
             const time = Timer.secondsToFullScale(
                 (Date.now() - this.mapMarkers.timeSinceSmallOilRigWasTriggered.getTime()) / 1000,
                 isInfoChannel ? 's' : '',
             );
             return isInfoChannel
-                ? client.intlGet(this.guildId, 'timeSinceLastEvent', { time })
-                : client.intlGet(this.guildId, 'timeSinceHeavyScientistsOnSmall', { time });
+                ? this.intlGet(this.guildId, 'timeSinceLastEvent', { time })
+                : this.intlGet(this.guildId, 'timeSinceHeavyScientistsOnSmall', { time });
         }
         return strings;
     }
 
     getCommandStack(command: string): string {
-        const client = getClient();
         const prefix = this.generalSettings.prefix;
-        const cmdStack = `${prefix}${client.intlGet(this.guildId, 'commandSyntaxStack')}`;
-        const cmdStackEn = `${prefix}${client.intlGet('en', 'commandSyntaxStack')}`;
+        const cmdStack = `${prefix}${this.intlGet(this.guildId, 'commandSyntaxStack')}`;
+        const cmdStackEn = `${prefix}${this.intlGet('en', 'commandSyntaxStack')}`;
         const rest = command.toLowerCase().startsWith(`${cmdStack} `)
             ? command.slice(`${cmdStack} `.length).trim()
             : command.slice(`${cmdStackEn} `.length).trim();
 
-        const itemId = client.items.getClosestItemIdByName(rest);
-        if (!itemId) return client.intlGet(this.guildId, 'noItemWithNameFound', { name: rest });
-        const itemName = client.items.getName(itemId);
-        const details = client.rustlabs.getStackDetailsById(itemId);
-        if (!details) return client.intlGet(this.guildId, 'couldNotFindStackDetails', { name: itemName });
-        return client.intlGet(this.guildId, 'stackSizeOfItem', { item: itemName, quantity: details[2].quantity });
+        const itemId = this._deps.gameDataProvider.items.getClosestItemIdByName(rest);
+        if (!itemId) return this.intlGet(this.guildId, 'noItemWithNameFound', { name: rest });
+        const itemName = this._deps.gameDataProvider.items.getName(itemId);
+        const details = this._deps.gameDataProvider.rustlabs.getStackDetailsById(itemId);
+        if (!details) return this.intlGet(this.guildId, 'couldNotFindStackDetails', { name: itemName });
+        return this.intlGet(this.guildId, 'stackSizeOfItem', { item: itemName, quantity: details[2].quantity });
     }
 
     getCommandSteamId(command: string, callerSteamId: string | null, callerName: string | null): string | null {
-        const client = getClient();
         const prefix = this.generalSettings.prefix;
-        const cmdSteamId = `${prefix}${client.intlGet(this.guildId, 'commandSyntaxSteamid')}`;
-        const cmdSteamIdEn = `${prefix}${client.intlGet('en', 'commandSyntaxSteamid')}`;
+        const cmdSteamId = `${prefix}${this.intlGet(this.guildId, 'commandSyntaxSteamid')}`;
+        const cmdSteamIdEn = `${prefix}${this.intlGet('en', 'commandSyntaxSteamid')}`;
         const lc = command.toLowerCase();
 
         if (lc === cmdSteamId || lc === cmdSteamIdEn) {
@@ -1861,7 +1943,7 @@ export default class RustPlus extends RustPlusLib {
         for (const player of this.team.players) {
             if (player.name.includes(name)) return `${player.name}: ${player.steamId}`;
         }
-        return client.intlGet(this.guildId, 'couldNotIdentifyMember', { name });
+        return this.intlGet(this.guildId, 'couldNotIdentifyMember', { name });
     }
 
     getCommandTeam(): string | null {
@@ -1870,34 +1952,32 @@ export default class RustPlus extends RustPlusLib {
     }
 
     getCommandTime(isInfoChannel = false): any {
-        const client = getClient();
         const time = Timer.convertDecimalToHoursMinutes(this.time.time);
         if (isInfoChannel) return [time, this.time.getTimeTillDayOrNight('s')];
 
-        const currentTime = client.intlGet(this.guildId, 'inGameTime', { time });
+        const currentTime = this.intlGet(this.guildId, 'inGameTime', { time });
         const timeLeft = this.time.getTimeTillDayOrNight();
         if (!timeLeft) return currentTime;
         const locString = this.time.isDay() ? 'timeTillNightfall' : 'timeTillDaylight';
-        return `${currentTime} ${client.intlGet(this.guildId, locString, { time: timeLeft })}`;
+        return `${currentTime} ${this.intlGet(this.guildId, locString, { time: timeLeft })}`;
     }
 
     getCommandTimer(command: string): any {
-        const client = getClient();
         const prefix = this.generalSettings.prefix;
-        const cmdTimer = `${prefix}${client.intlGet(this.guildId, 'commandSyntaxTimer')}`;
-        const cmdTimerEn = `${prefix}${client.intlGet('en', 'commandSyntaxTimer')}`;
-        const cmdTimers = `${prefix}${client.intlGet(this.guildId, 'commandSyntaxTimers')}`;
-        const cmdTimersEn = `${prefix}${client.intlGet('en', 'commandSyntaxTimers')}`;
-        const cmdAdd = client.intlGet(this.guildId, 'commandSyntaxAdd');
-        const cmdAddEn = client.intlGet('en', 'commandSyntaxAdd');
-        const cmdRemove = client.intlGet(this.guildId, 'commandSyntaxRemove');
-        const cmdRemoveEn = client.intlGet('en', 'commandSyntaxRemove');
+        const cmdTimer = `${prefix}${this.intlGet(this.guildId, 'commandSyntaxTimer')}`;
+        const cmdTimerEn = `${prefix}${this.intlGet('en', 'commandSyntaxTimer')}`;
+        const cmdTimers = `${prefix}${this.intlGet(this.guildId, 'commandSyntaxTimers')}`;
+        const cmdTimersEn = `${prefix}${this.intlGet('en', 'commandSyntaxTimers')}`;
+        const cmdAdd = this.intlGet(this.guildId, 'commandSyntaxAdd');
+        const cmdAddEn = this.intlGet('en', 'commandSyntaxAdd');
+        const cmdRemove = this.intlGet(this.guildId, 'commandSyntaxRemove');
+        const cmdRemoveEn = this.intlGet('en', 'commandSyntaxRemove');
         const lc = command.toLowerCase();
 
         if (lc === cmdTimers || lc === cmdTimersEn) {
-            if (Object.keys(this.timers).length === 0) return client.intlGet(this.guildId, 'noActiveTimers');
+            if (Object.keys(this.timers).length === 0) return this.intlGet(this.guildId, 'noActiveTimers');
             return Object.entries(this.timers).map(([id, content]: any) =>
-                client.intlGet(this.guildId, 'timeLeftTimer', {
+                this.intlGet(this.guildId, 'timeLeftTimer', {
                     id: parseInt(id),
                     time: Timer.getTimeLeftOfTimer(content.timer),
                     message: content.message,
@@ -1915,41 +1995,40 @@ export default class RustPlus extends RustPlusLib {
         if (sub === cmdAdd.toLowerCase() || sub === cmdAddEn.toLowerCase()) {
             const timeStr = value.replace(/ .*/, '');
             const msg = value.slice(timeStr.length + 1);
-            if (!msg) return client.intlGet(this.guildId, 'missingTimerMessage');
+            if (!msg) return this.intlGet(this.guildId, 'missingTimerMessage');
             const seconds = Timer.getSecondsFromStringTime(timeStr);
-            if (seconds === null) return client.intlGet(this.guildId, 'timeFormatInvalid');
+            if (seconds === null) return this.intlGet(this.guildId, 'timeFormatInvalid');
 
             let id = 0;
             while (Object.keys(this.timers).map(Number).includes(id)) id++;
             this.timers[id] = {
                 timer: new Timer.Timer(() => {
-                    this.sendInGameMessage(client.intlGet(this.guildId, 'timer', { message: msg }));
+                    this.sendInGameMessage(this.intlGet(this.guildId, 'timer', { message: msg }));
                     delete this.timers[id];
                     this.persistCustomTimersState();
                 }, seconds * 1000),
                 message: msg,
             };
             this.timers[id].timer.start();
-            return client.intlGet(this.guildId, 'timerSet', { time: timeStr });
+            return this.intlGet(this.guildId, 'timerSet', { time: timeStr });
         } else if (sub === cmdRemove.toLowerCase() || sub === cmdRemoveEn.toLowerCase()) {
             const id = parseInt(value.replace(/ .*/, ''));
-            if (isNaN(id)) return client.intlGet(this.guildId, 'timerIdInvalid');
+            if (isNaN(id)) return this.intlGet(this.guildId, 'timerIdInvalid');
             if (!Object.keys(this.timers).map(Number).includes(id))
-                return client.intlGet(this.guildId, 'timerIdDoesNotExist', { id });
+                return this.intlGet(this.guildId, 'timerIdDoesNotExist', { id });
             this.timers[id].timer.stop();
             delete this.timers[id];
-            return client.intlGet(this.guildId, 'timerRemoved', { id });
+            return this.intlGet(this.guildId, 'timerRemoved', { id });
         }
         return null;
     }
 
     async getCommandTranslateTo(command: string): Promise<string> {
-        const client = getClient();
         const prefix = this.generalSettings.prefix;
-        const cmdTr = `${prefix}${client.intlGet(this.guildId, 'commandSyntaxTranslateTo')}`;
-        const cmdTrEn = `${prefix}${client.intlGet('en', 'commandSyntaxTranslateTo')}`;
-        const cmdLang = client.intlGet(this.guildId, 'commandSyntaxLanguage');
-        const cmdLangEn = client.intlGet('en', 'commandSyntaxLanguage');
+        const cmdTr = `${prefix}${this.intlGet(this.guildId, 'commandSyntaxTranslateTo')}`;
+        const cmdTrEn = `${prefix}${this.intlGet('en', 'commandSyntaxTranslateTo')}`;
+        const cmdLang = this.intlGet(this.guildId, 'commandSyntaxLanguage');
+        const cmdLangEn = this.intlGet('en', 'commandSyntaxLanguage');
         const lc = command.toLowerCase();
 
         if (lc.startsWith(`${cmdTr} ${cmdLang} `) || lc.startsWith(`${cmdTrEn} ${cmdLangEn} `)) {
@@ -1957,8 +2036,8 @@ export default class RustPlus extends RustPlusLib {
                 ? command.slice(`${cmdTr} ${cmdLang} `.length).trim()
                 : command.slice(`${cmdTrEn} ${cmdLangEn} `.length).trim();
             return lang in languages
-                ? client.intlGet(this.guildId, 'languageCode', { code: (languages as any)[lang] })
-                : client.intlGet(this.guildId, 'couldNotFindLanguage', { language: lang });
+                ? this.intlGet(this.guildId, 'languageCode', { code: (languages as any)[lang] })
+                : this.intlGet(this.guildId, 'couldNotFindLanguage', { language: lang });
         }
 
         const rest = lc.startsWith(`${cmdTr} `)
@@ -1966,20 +2045,19 @@ export default class RustPlus extends RustPlusLib {
             : command.slice(`${cmdTrEn} `.length).trim();
         const lang = rest.replace(/ .*/, '');
         const text = rest.slice(lang.length).trim();
-        if (!lang || !text) return client.intlGet(this.guildId, 'missingArguments');
+        if (!lang || !text) return this.intlGet(this.guildId, 'missingArguments');
 
         try {
             return await Translate(text, lang);
         } catch (_e) {
-            return client.intlGet(this.guildId, 'languageLangNotSupported', { language: lang });
+            return this.intlGet(this.guildId, 'languageLangNotSupported', { language: lang });
         }
     }
 
     async getCommandTranslateFromTo(command: string): Promise<string> {
-        const client = getClient();
         const prefix = this.generalSettings.prefix;
-        const cmdTrf = `${prefix}${client.intlGet(this.guildId, 'commandSyntaxTranslateFromTo')}`;
-        const cmdTrfEn = `${prefix}${client.intlGet('en', 'commandSyntaxTranslateFromTo')}`;
+        const cmdTrf = `${prefix}${this.intlGet(this.guildId, 'commandSyntaxTranslateFromTo')}`;
+        const cmdTrfEn = `${prefix}${this.intlGet('en', 'commandSyntaxTranslateFromTo')}`;
         const rest = command.toLowerCase().startsWith(`${cmdTrf} `)
             ? command.slice(`${cmdTrf} `.length).trim()
             : command.slice(`${cmdTrfEn} `.length).trim();
@@ -1988,45 +2066,42 @@ export default class RustPlus extends RustPlusLib {
         const remaining = rest.slice(from.length).trim();
         const to = remaining.replace(/ .*/, '');
         const text = remaining.slice(to.length).trim();
-        if (!from || !to || !text) return client.intlGet(this.guildId, 'missingArguments');
+        if (!from || !to || !text) return this.intlGet(this.guildId, 'missingArguments');
 
         try {
             return await Translate(text, { from, to });
         } catch (e: any) {
             const match = /The language "(.*?)"/.exec(e?.message ?? '');
             return match?.[1]
-                ? client.intlGet(this.guildId, 'languageLangNotSupported', { language: match[1] })
-                : client.intlGet(this.guildId, 'languageNotSupported');
+                ? this.intlGet(this.guildId, 'languageLangNotSupported', { language: match[1] })
+                : this.intlGet(this.guildId, 'languageNotSupported');
         }
     }
 
     async getCommandTTS(command: string, callerName: string): Promise<string> {
-        const client = getClient();
         const prefix = this.generalSettings.prefix;
-        const cmdTTS = `${prefix}${client.intlGet(this.guildId, 'commandSyntaxTTS')}`;
-        const cmdTTSEn = `${prefix}${client.intlGet('en', 'commandSyntaxTTS')}`;
+        const cmdTTS = `${prefix}${this.intlGet(this.guildId, 'commandSyntaxTTS')}`;
+        const cmdTTSEn = `${prefix}${this.intlGet('en', 'commandSyntaxTTS')}`;
         const text = command.toLowerCase().startsWith(`${cmdTTS} `)
             ? command.slice(`${cmdTTS} `.length).trim()
             : command.slice(`${cmdTTSEn} `.length).trim();
         await DiscordMessages.sendTTSMessage(this.guildId, callerName, text);
         await DiscordVoice.sendDiscordVoiceMessage(this.guildId, text);
-        return client.intlGet(this.guildId, 'sentTextToSpeech');
+        return this.intlGet(this.guildId, 'sentTextToSpeech');
     }
 
-    getCommandUnmute(): string {
-        const client = getClient();
-        const instance = client.getInstance(this.guildId);
+    async getCommandUnmute(): Promise<string> {
+        const instance = await getPersistenceService().readGuildState(this.guildId);
         instance.generalSettings.muteInGameBotMessages = false;
         this.generalSettings.muteInGameBotMessages = false;
-        client.setInstance(this.guildId, instance);
-        return client.intlGet(this.guildId, 'inGameBotMessagesUnmuted');
+        await getPersistenceService().setGeneralSetting(this.guildId, 'muteInGameBotMessages', false);
+        return this.intlGet(this.guildId, 'inGameBotMessagesUnmuted');
     }
 
-    getCommandUpkeep(): any {
-        const client = getClient();
-        const instance = client.getInstance(this.guildId);
+    async getCommandUpkeep(): Promise<any> {
+        const instance = await getPersistenceService().readGuildState(this.guildId);
         const strings: string[] = [];
-        const upkeepStr = client.intlGet(this.guildId, 'upkeep').toLowerCase();
+        const upkeepStr = this.intlGet(this.guildId, 'upkeep').toLowerCase();
         for (const [key, value] of Object.entries(instance.serverList[this.serverId].storageMonitors) as [
             string,
             any,
@@ -2034,76 +2109,72 @@ export default class RustPlus extends RustPlusLib {
             if (value.type !== 'toolCupboard' || !value.upkeep) continue;
             strings.push(`${value.name} [${key}] ${upkeepStr}: ${value.upkeep}`);
         }
-        return strings.length > 0 ? strings : client.intlGet(this.guildId, 'noToolCupboardWereFound');
+        return strings.length > 0 ? strings : this.intlGet(this.guildId, 'noToolCupboardWereFound');
     }
 
     getCommandUptime(): string {
-        const client = getClient();
         const fmt = (d: Date | null) =>
-            d ? Timer.secondsToFullScale((Date.now() - d.getTime()) / 1000) : client.intlGet(this.guildId, 'offline');
-        const bot = fmt(client.uptimeBot);
+            d ? Timer.secondsToFullScale((Date.now() - d.getTime()) / 1000) : this.intlGet(this.guildId, 'offline');
+        const bot = fmt(this._deps.discordNotifier.uptimeBot);
         const server = fmt(this.uptimeServer);
-        const str = `${client.intlGet(this.guildId, 'bot')}: ${bot} ${client.intlGet(this.guildId, 'server')}: ${server}.`;
+        const str = `${this.intlGet(this.guildId, 'bot')}: ${bot} ${this.intlGet(this.guildId, 'server')}: ${server}.`;
         return str.charAt(0).toUpperCase() + str.slice(1);
     }
 
     getCommandWipe(isInfoChannel = false): string {
-        const client = getClient();
         if (isInfoChannel)
-            return client.intlGet(this.guildId, 'dayOfWipe', {
+            return this.intlGet(this.guildId, 'dayOfWipe', {
                 day: Math.ceil(this.info.getSecondsSinceWipe() / (60 * 60 * 24)),
             });
-        return client.intlGet(this.guildId, 'timeSinceWipe', { time: this.info.getTimeSinceWipe() });
+        return this.intlGet(this.guildId, 'timeSinceWipe', { time: this.info.getTimeSinceWipe() });
     }
 
     getCommandTravelingVendor(isInfoChannel = false): any {
-        const client = getClient();
         const strings: string[] = [];
         for (const vendor of this.mapMarkers.travelingVendors) {
-            if (isInfoChannel) return client.intlGet(this.guildId, 'atLocation', { location: vendor.location.string });
+            if (isInfoChannel) return this.intlGet(this.guildId, 'atLocation', { location: vendor.location.string });
             strings.push(
-                client.intlGet(this.guildId, 'travelingVendorLocatedAt', { location: vendor.location.string }),
+                this.intlGet(this.guildId, 'travelingVendorLocatedAt', { location: vendor.location.string }),
             );
         }
 
         if (strings.length === 0) {
             if (!this.mapMarkers.timeSinceTravelingVendorWasOnMap) {
                 return isInfoChannel
-                    ? client.intlGet(this.guildId, 'notActive')
-                    : client.intlGet(this.guildId, 'travelingVendorNotOnMap');
+                    ? this.intlGet(this.guildId, 'notActive')
+                    : this.intlGet(this.guildId, 'travelingVendorNotOnMap');
             }
             const time = Timer.secondsToFullScale(
                 (Date.now() - this.mapMarkers.timeSinceTravelingVendorWasOnMap.getTime()) / 1000,
                 isInfoChannel ? 's' : '',
             );
             return isInfoChannel
-                ? client.intlGet(this.guildId, 'timeSinceLast', { time })
-                : client.intlGet(this.guildId, 'timeSinceTravelingVendorWasOnMap', { time });
+                ? this.intlGet(this.guildId, 'timeSinceLast', { time })
+                : this.intlGet(this.guildId, 'timeSinceTravelingVendorWasOnMap', { time });
         }
         return strings;
     }
 
     getCommandDeepSea(isInfoChannel = false): any {
-        const client = getClient();
         const strings: string[] = [];
         for (const deepSea of this.mapMarkers.deepSeas) {
-            if (isInfoChannel) return client.intlGet(this.guildId, 'atLocation', { location: deepSea.location.string });
-            strings.push(client.intlGet(this.guildId, 'deepSeaLocatedAt', { location: deepSea.location.string }));
+            if (isInfoChannel) return this.intlGet(this.guildId, 'atLocation', { location: deepSea.location.string });
+            strings.push(this.intlGet(this.guildId, 'deepSeaLocatedAt', { location: deepSea.location.string }));
         }
 
         if (strings.length === 0) {
             if (!this.mapMarkers.timeSinceDeepSeaWasOnMap) {
                 return isInfoChannel
-                    ? client.intlGet(this.guildId, 'notActive')
-                    : client.intlGet(this.guildId, 'deepSeaNotOnMap');
+                    ? this.intlGet(this.guildId, 'notActive')
+                    : this.intlGet(this.guildId, 'deepSeaNotOnMap');
             }
             const time = Timer.secondsToFullScale(
                 (Date.now() - this.mapMarkers.timeSinceDeepSeaWasOnMap.getTime()) / 1000,
                 isInfoChannel ? 's' : '',
             );
             return isInfoChannel
-                ? client.intlGet(this.guildId, 'timeSinceLast', { time })
-                : client.intlGet(this.guildId, 'timeSinceDeepSeaWasOnMap', { time });
+                ? this.intlGet(this.guildId, 'timeSinceLast', { time })
+                : this.intlGet(this.guildId, 'timeSinceDeepSeaWasOnMap', { time });
         }
         return strings;
     }
