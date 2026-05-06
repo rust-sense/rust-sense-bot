@@ -10,7 +10,7 @@ export const gridDiameter = GRID_DIAMETER;
 
 export function getPos(x: number, y: number, mapSize: number, rustplus: any) {
     const intlGet =
-        rustplus?.intlGet ??
+        rustplus?.intlGet?.bind(rustplus) ??
         ((_guildId: string | null, key: string) => {
             return key;
         });

@@ -1,6 +1,6 @@
 import * as DiscordMessages from '../discordTools/discordMessages.js';
 import * as GameMapModule from '../domain/GameMap.js';
-import type DiscordBot from '../structures/DiscordBot.js';
+import type { ILocalizationService } from '../interfaces/ILocalizationService.js';
 
 const GameMap = GameMapModule;
 
@@ -18,7 +18,7 @@ async function persistSmartSwitchState(guildId: string, serverId: string, entity
     });
 }
 
-export async function syncSmartSwitches(rustplus: any, client: DiscordBot, time: any) {
+export async function syncSmartSwitches(rustplus: any, client: ILocalizationService, time: any) {
     const instance = await getPersistenceService().readGuildState(rustplus.guildId);
     const guildId = rustplus.guildId;
     const serverId = rustplus.serverId;
@@ -335,7 +335,7 @@ export async function syncSmartSwitches(rustplus: any, client: DiscordBot, time:
     }
 }
 
-export async function smartSwitchCommandHandler(rustplus: any, client: DiscordBot, command: string) {
+export async function smartSwitchCommandHandler(rustplus: any, client: ILocalizationService, command: string) {
     const guildId = rustplus.guildId;
     const serverId = rustplus.serverId;
     const instance = await getPersistenceService().readGuildState(guildId);
@@ -472,7 +472,7 @@ export async function smartSwitchCommandHandler(rustplus: any, client: DiscordBo
 
 export async function smartSwitchCommandTurnOnOff(
     rustplus: any,
-    client: DiscordBot,
+    client: ILocalizationService,
     entityId: string,
     active: boolean,
 ) {

@@ -9,13 +9,23 @@ interface Monument {
     y: number;
 }
 
+export interface SellOrder {
+    itemId: number;
+    quantity: number;
+    currencyId: number;
+    costPerItem: number;
+    amountInStock: number;
+    itemIsBlueprint: boolean;
+    currencyIsBlueprint: boolean;
+}
+
 interface Marker {
     id: number;
     type: number;
     x: number;
     y: number;
     name?: string;
-    sellOrders?: unknown;
+    sellOrders?: SellOrder[];
     rotation?: number;
     radius?: number;
     /* Extended fields set during tracking */

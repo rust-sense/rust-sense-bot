@@ -1,10 +1,10 @@
 import { getPersistenceService } from '../persistence/index.js';
-import type DiscordBot from '../structures/DiscordBot.js';
+import type { ILocalizationService } from '../interfaces/ILocalizationService.js';
 import * as SmartAlarmHandler from './smartAlarmService.js';
 import * as SmartSwitchGroupHandler from './smartSwitchGroupService.js';
 import * as SmartSwitchHandler from './smartSwitchService.js';
 
-export async function inGameCommandHandler(rustplus: any, client: DiscordBot, message: any) {
+export async function inGameCommandHandler(rustplus: any, client: ILocalizationService, message: any) {
     const guildId = rustplus.guildId;
     const instance = await getPersistenceService().readGuildState(guildId);
 

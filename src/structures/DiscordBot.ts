@@ -1,8 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { createIntl, createIntlCache } from '@formatjs/intl';
 import * as Discord from 'discord.js';
-import { IntlMessageFormat } from 'intl-messageformat';
 import config from '../config.js';
 import discordCommands from '../discordCommands/index.js';
 import discordEvents from '../discordEvents/index.js';
@@ -11,56 +9,69 @@ import * as DiscordTools from '../discordTools/discordTools.js';
 import * as Constants from '../domain/constants.js';
 import * as PermissionHandler from '../handlers/permissionHandler.js';
 import { getPersistenceService } from '../persistence/index.js';
-import Battlemetrics from '../structures/Battlemetrics.js';
-import RustLabs from '../structures/RustLabs.js';
+import type { BattlemetricsManager } from '../services/BattlemetricsManager.js';
+import type { GameDataProvider } from '../services/GameDataProvider.js';
+import type { LocalizationService } from '../services/LocalizationService.js';
+import type Battlemetrics from '../structures/Battlemetrics.js';
+import type Cctv from './Cctv.js';
 import RustPlus from '../structures/RustPlus.js';
+import type { RustPlusManager } from './RustPlusManager.js';
 import type { DiscordEvent } from '../types/discord.js';
-import { cwdPath, loadJsonResourceSync } from '../utils/filesystemUtils.js';
-import Cctv from './Cctv.js';
-import Items from './Items.js';
+import type { Instance } from '../types/instance.js';
+import { cwdPath } from '../utils/filesystemUtils.js';
+import type Items from './Items.js';
 import Logger from './Logger.js';
+import type RustLabs from './RustLabs.js';
+
+export interface DiscordBotServices {
+    localizationService: LocalizationService;
+    gameDataProvider: GameDataProvider;
+    battlemetricsManager: BattlemetricsManager;
+}
 
 export default class DiscordBot extends Discord.Client {
     logger: Logger;
     commands: Discord.Collection<string, unknown>;
     fcmListeners: Record<string, { destroy: () => void }> = {};
     fcmListenersLite: Record<string, Record<string, { destroy: () => void }>> = {};
-    intlInstances: Record<string, ReturnType<typeof createIntl>> = {};
-    guildLanguages: Record<string, string> = {};
-    customGuildIntl: Record<string, Record<string, IntlMessageFormat>> = {};
-    rustplusInstances: Record<string, RustPlus> = {};
-    activeRustplusInstances: Record<string, boolean> = {};
-    rustplusReconnectTimers: Record<string, ReturnType<typeof setTimeout> | null> = {};
-    rustplusLiteReconnectTimers: Record<string, ReturnType<typeof setTimeout> | null> = {};
-    rustplusReconnecting: Record<string, boolean> = {};
-    rustplusMaps: Record<string, unknown> = {};
     uptimeBot: Date | null = null;
-    items: Items;
-    rustlabs: RustLabs;
-    cctv: Cctv;
     pollingIntervalMs: number;
-    battlemetricsInstances: Record<string, Battlemetrics> = {};
-    battlemetricsIntervalId: ReturnType<typeof setInterval> | null = null;
-    battlemetricsIntervalCounter = 0;
     voiceLeaveTimeouts: Record<string, ReturnType<typeof setTimeout> | null> = {};
-    localeCache: ReturnType<typeof createIntlCache>;
 
-    constructor(props: Discord.ClientOptions) {
+    readonly localizationService: LocalizationService;
+    readonly gameDataProvider: GameDataProvider;
+    readonly battlemetricsManager: BattlemetricsManager;
+    rustPlusManager!: RustPlusManager;
+
+    /* Delegation getters — backward compat while callers migrate to direct service access */
+    get items(): Items { return this.gameDataProvider.items; }
+    get rustlabs(): RustLabs { return this.gameDataProvider.rustlabs; }
+    get cctv(): Cctv { return this.gameDataProvider.cctv; }
+    get battlemetricsInstances(): Record<string, Battlemetrics> { return this.battlemetricsManager.battlemetricsInstances; }
+    get battlemetricsIntervalId() { return this.battlemetricsManager.intervalId; }
+    set battlemetricsIntervalId(v: ReturnType<typeof setInterval> | null) { this.battlemetricsManager.intervalId = v; }
+    get battlemetricsIntervalCounter() { return this.battlemetricsManager.intervalCounter; }
+    set battlemetricsIntervalCounter(v: number) { this.battlemetricsManager.intervalCounter = v; }
+    get rustplusInstances(): Record<string, RustPlus> { return this.rustPlusManager.rustplusInstances; }
+    get activeRustplusInstances(): Record<string, boolean> { return this.rustPlusManager.activeRustplusInstances; }
+    get rustplusReconnectTimers(): Record<string, ReturnType<typeof setTimeout> | null> { return this.rustPlusManager.rustplusReconnectTimers; }
+    get rustplusLiteReconnectTimers(): Record<string, ReturnType<typeof setTimeout> | null> { return this.rustPlusManager.rustplusLiteReconnectTimers; }
+    get rustplusReconnecting(): Record<string, boolean> { return this.rustPlusManager.rustplusReconnecting; }
+    get rustplusMaps(): Record<string, unknown> { return this.rustPlusManager.rustplusMaps; }
+
+    constructor(props: Discord.ClientOptions, services: DiscordBotServices) {
         super(props);
 
         this.logger = new Logger('discordBot.log');
-
         this.commands = new Discord.Collection();
-
         this.pollingIntervalMs = config.general.pollingIntervalMs;
 
-        this.items = new Items();
-        this.rustlabs = new RustLabs();
-        this.cctv = new Cctv();
+        this.localizationService = services.localizationService;
+        this.gameDataProvider = services.gameDataProvider;
+        this.battlemetricsManager = services.battlemetricsManager;
 
         this.loadDiscordCommands();
         this.loadDiscordEvents();
-        this.setupIntl();
     }
 
     loadDiscordCommands(): void {
@@ -82,107 +93,29 @@ export default class DiscordBot extends Discord.Client {
         }
     }
 
-    setupIntl(): void {
-        this.localeCache = createIntlCache();
-
-        // Load english intl
-        this.checkLocaleIntlLoad(Constants.DEFAULT_LOCALE);
-
-        // Load bot intl
-        this.checkLocaleIntlLoad(config.general.language);
-    }
-
-    createIntlForLocale(locale: string): ReturnType<typeof createIntl> {
-        const messages = loadJsonResourceSync<Record<string, string>>(`languages/${locale}.json`);
-
-        const intlConfig = {
-            locale,
-            messages,
-            defaultLocale: Constants.DEFAULT_LOCALE,
-        };
-
-        return createIntl(intlConfig, this.localeCache);
-    }
-
-    checkLocaleIntlLoad(locale: string): ReturnType<typeof createIntl> {
-        if (locale in this.intlInstances) {
-            return this.intlInstances[locale];
-        }
-
-        const intlInstance = this.createIntlForLocale(locale);
-        this.intlInstances[locale] = intlInstance;
-
-        return intlInstance;
-    }
-
-    loadGuildIntl(guildId: string, instance: import('../types/instance.js').Instance): void {
-        this.checkLocaleIntlLoad(instance.generalSettings.language);
-        this.guildLanguages[guildId] = instance.generalSettings.language;
-
-        for (const [key, message] of Object.entries(instance.customIntlMessages)) {
-            this.loadGuildCustomIntl(guildId, instance, key, message);
-        }
-    }
-
-    loadGuildCustomIntl(
-        guildId: string,
-        instance: import('../types/instance.js').Instance,
-        key: string,
-        message: string,
-    ): void {
-        if (!(guildId in this.customGuildIntl)) {
-            this.customGuildIntl[guildId] = {};
-        }
-
-        const messageFormat = new IntlMessageFormat(message, instance.generalSettings.language);
-        this.customGuildIntl[guildId][key] = messageFormat;
-    }
-
-    async loadGuildsIntlFromCache(): Promise<void> {
-        for (const guild of this.guilds.cache) {
-            const guildId = guild[0];
-            const instance = await getPersistenceService().readGuildState(guildId);
-            this.loadGuildIntl(guildId, instance);
-        }
-    }
-
-    formatWithIntl(
-        intlInstance: ReturnType<typeof createIntl>,
-        id: string,
-        variables: Record<string, unknown> = {},
-    ): string {
-        const englishIntl = this.checkLocaleIntlLoad(Constants.DEFAULT_LOCALE);
-        const messages = englishIntl.messages as Record<string, string>;
-        const defaultMessage = messages[id];
-
-        return intlInstance.formatMessage(
-            { id, defaultMessage },
-            variables as Record<string, string | number | Date | boolean>,
-        ) as string;
-    }
-
     intlGet(guildId: string | null, id: string, variables: Record<string, unknown> = {}): string {
-        // Bot Intl formatting
-        if (guildId === null) {
-            const intlInstance = this.checkLocaleIntlLoad(config.general.language);
-            return this.formatWithIntl(intlInstance, id, variables);
-        }
+        return this.localizationService.intlGet(guildId, id, variables);
+    }
 
-        // English Intl formatting
-        if (guildId === Constants.DEFAULT_LOCALE) {
-            const intlInstance = this.checkLocaleIntlLoad(Constants.DEFAULT_LOCALE);
-            return this.formatWithIntl(intlInstance, id, variables);
-        }
+    loadGuildIntl(guildId: string, instance: Instance): void {
+        this.localizationService.loadGuildIntl(guildId, instance);
+    }
 
-        // Guild custom Intl formatting
-        if (guildId in this.customGuildIntl && id in this.customGuildIntl[guildId]) {
-            const messageFormat = this.customGuildIntl[guildId][id];
-            return messageFormat.format(variables) as string;
-        }
+    loadGuildCustomIntl(guildId: string, instance: Instance, key: string, message: string): void {
+        this.localizationService.loadGuildCustomIntl(guildId, instance, key, message);
+    }
 
-        // Guild Intl instance formatting
-        const intlInstance = this.checkLocaleIntlLoad(this.guildLanguages[guildId] ?? config.general.language);
-        return this.formatWithIntl(intlInstance, id, variables);
+    loadGuildsIntlFromCache(): void {
+        const guildIds = [...this.guilds.cache.keys()];
+        void this.localizationService.loadGuildsIntlFromGuildIds(guildIds);
+    }
+
+    checkLocaleIntlLoad(locale: string) {
+        return this.localizationService.checkLocaleIntlLoad(locale);
+    }
+
+    removeCustomIntlKey(guildId: string, key: string): void {
+        this.localizationService.removeCustomIntlKey(guildId, key);
     }
 
     build(): void {
@@ -325,34 +258,11 @@ export default class DiscordBot extends Discord.Client {
         steamId: string,
         playerToken: string,
     ): RustPlus {
-        const rustplus = new RustPlus(guildId, serverIp, appPort, steamId, playerToken);
-
-        /* Add rustplus instance to Object */
-        this.rustplusInstances[guildId] = rustplus;
-        this.activeRustplusInstances[guildId] = true;
-
-        rustplus.build();
-
-        return rustplus;
+        return this.rustPlusManager.createRustplusInstance(guildId, serverIp, appPort, steamId, playerToken);
     }
 
     async createRustplusInstancesFromConfig(): Promise<void> {
-        for (const guildId of await getPersistenceService().listGuildIds()) {
-            const instance = await getPersistenceService().readGuildState(guildId);
-            if (!instance) {
-                continue;
-            }
-
-            if (instance.activeServer !== null && Object.hasOwn(instance.serverList, instance.activeServer)) {
-                this.createRustplusInstance(
-                    guildId,
-                    instance.serverList[instance.activeServer].serverIp,
-                    instance.serverList[instance.activeServer].appPort,
-                    instance.serverList[instance.activeServer].steamId,
-                    instance.serverList[instance.activeServer].playerToken,
-                );
-            }
-        }
+        return this.rustPlusManager.createRustplusInstancesFromConfig();
     }
 
     async deleteGuildState(guildId: string): Promise<void> {
@@ -364,22 +274,8 @@ export default class DiscordBot extends Discord.Client {
         }
         delete this.fcmListenersLite[guildId];
 
-        this.rustplusInstances[guildId]?.deleteThisRustplusInstance();
-        delete this.rustplusInstances[guildId];
-        delete this.activeRustplusInstances[guildId];
-        delete this.rustplusReconnecting[guildId];
-        delete this.rustplusMaps[guildId];
-        delete this.customGuildIntl[guildId];
-
-        if (this.rustplusReconnectTimers[guildId]) {
-            clearTimeout(this.rustplusReconnectTimers[guildId]);
-        }
-        delete this.rustplusReconnectTimers[guildId];
-
-        if (this.rustplusLiteReconnectTimers[guildId]) {
-            clearTimeout(this.rustplusLiteReconnectTimers[guildId]);
-        }
-        delete this.rustplusLiteReconnectTimers[guildId];
+        this.rustPlusManager.deleteGuildInstances(guildId);
+        this.localizationService.unloadGuildIntl(guildId);
 
         if (this.voiceLeaveTimeouts[guildId]) {
             clearTimeout(this.voiceLeaveTimeouts[guildId]);
@@ -390,23 +286,11 @@ export default class DiscordBot extends Discord.Client {
     }
 
     resetRustplusVariables(guildId: string): void {
-        this.activeRustplusInstances[guildId] = false;
-        this.rustplusReconnecting[guildId] = false;
-        delete this.rustplusMaps[guildId];
-
-        if (this.rustplusReconnectTimers[guildId]) {
-            clearTimeout(this.rustplusReconnectTimers[guildId]);
-            this.rustplusReconnectTimers[guildId] = null;
-        }
-
-        if (this.rustplusLiteReconnectTimers[guildId]) {
-            clearTimeout(this.rustplusLiteReconnectTimers[guildId]);
-            this.rustplusLiteReconnectTimers[guildId] = null;
-        }
+        this.rustPlusManager.resetRustplusVariables(guildId);
     }
 
     isJpgImageChanged(guildId: string, map: any): boolean {
-        return JSON.stringify(this.rustplusMaps[guildId]) !== JSON.stringify(map.jpgImage);
+        return this.rustPlusManager.isJpgImageChanged(guildId, map);
     }
 
     async findAvailableTrackerId(guildId: string): Promise<number> {
@@ -431,83 +315,9 @@ export default class DiscordBot extends Discord.Client {
         }
     }
 
-    /**
-     *  Check if Battlemetrics instances are missing/not required/need update.
-     */
     async updateBattlemetricsInstances(): Promise<void> {
-        const activeInstances: string[] = [];
-
-        /* Check for instances that are missing or need update. */
-        for (const guild of this.guilds.cache) {
-            const guildId = guild[0];
-            const instance = await getPersistenceService().readGuildState(guildId);
-            const activeServer = instance.activeServer;
-            if (activeServer !== null && Object.hasOwn(instance.serverList, activeServer)) {
-                if (instance.serverList[activeServer].battlemetricsId !== null) {
-                    /* A Battlemetrics ID exist. */
-                    const battlemetricsId = instance.serverList[activeServer].battlemetricsId;
-                    if (!activeInstances.includes(battlemetricsId)) {
-                        activeInstances.push(battlemetricsId);
-                        if (Object.hasOwn(this.battlemetricsInstances, battlemetricsId)) {
-                            /* Update */
-                            await this.battlemetricsInstances[battlemetricsId].evaluation();
-                        } else {
-                            /* Add */
-                            const bmInstance = new Battlemetrics();
-                            bmInstance.id = battlemetricsId;
-                            await bmInstance.setup();
-                            this.battlemetricsInstances[battlemetricsId] = bmInstance;
-                        }
-                    }
-                } else {
-                    /* Battlemetrics ID is missing, try with server name. */
-                    const name = instance.serverList[activeServer].title;
-                    const bmInstance = new Battlemetrics();
-                    bmInstance.id = null;
-                    bmInstance.name = name;
-                    await bmInstance.setup();
-                    if (bmInstance.lastUpdateSuccessful) {
-                        /* Found an Id, is it a new Id? */
-                        instance.serverList[activeServer].battlemetricsId = bmInstance.id;
-                        await getPersistenceService().updateServerFields(guildId, activeServer, {
-                            battlemetricsId: bmInstance.id,
-                        });
-
-                        if (Object.hasOwn(this.battlemetricsInstances, bmInstance.id as string)) {
-                            if (!activeInstances.includes(bmInstance.id as string)) {
-                                activeInstances.push(bmInstance.id as string);
-                                await this.battlemetricsInstances[bmInstance.id as string].evaluation(bmInstance.data);
-                            }
-                        } else {
-                            activeInstances.push(bmInstance.id as string);
-                            this.battlemetricsInstances[bmInstance.id as string] = bmInstance;
-                        }
-                    }
-                }
-            }
-
-            for (const [trackerId, content] of Object.entries(instance.trackers)) {
-                if (!activeInstances.includes(content.battlemetricsId)) {
-                    activeInstances.push(content.battlemetricsId);
-                    if (Object.hasOwn(this.battlemetricsInstances, content.battlemetricsId)) {
-                        /* Update */
-                        await this.battlemetricsInstances[content.battlemetricsId].evaluation();
-                    } else {
-                        /* Add */
-                        const bmInstance = new Battlemetrics();
-                        bmInstance.id = content.battlemetricsId;
-                        await bmInstance.setup();
-                        this.battlemetricsInstances[content.battlemetricsId] = bmInstance;
-                    }
-                }
-            }
-        }
-
-        /* Find instances that are no longer required and delete them. */
-        const remove = Object.keys(this.battlemetricsInstances).filter((e) => !activeInstances.includes(e));
-        for (const id of remove) {
-            delete this.battlemetricsInstances[id];
-        }
+        const guildIds = [...this.guilds.cache.keys()];
+        await this.battlemetricsManager.updateInstances(guildIds);
     }
 
     async interactionReply(interaction: any, content: any): Promise<any> {

@@ -1,14 +1,9 @@
-import { resolve } from '../container.js';
+import type { ILocalizationService } from '../interfaces/ILocalizationService.js';
+import type { IRustPlusManagerClient } from '../interfaces/IRustPlusManagerClient.js';
 import { RustPlus as RustPlusLib } from '../lib/rustplus/RustPlus.js';
 import rustplusLiteEvents from '../rustplusLiteEvents/index.js';
-import type { RustplusEvent } from '../types/discord.js';
+import type { RustplusLiteEvent } from '../types/rustplusLiteEvents.js';
 import LibLoggerAdapter from './LibLoggerAdapter.js';
-
-function getClient() {
-    return resolve<{
-        intlGet: (guildId: string | null, key: string, options?: Record<string, unknown>) => string;
-    }>('discordBot');
-}
 
 interface LoggerLike {
     log: (title: string, text: string, level: string) => void;
@@ -16,6 +11,7 @@ interface LoggerLike {
 
 interface RustplusLike {
     serverId: string;
+    updateLeaderRustPlusLiteInstance(): Promise<void>;
 }
 
 export default class RustPlusLite extends RustPlusLib {
@@ -26,6 +22,9 @@ export default class RustPlusLite extends RustPlusLib {
     isActive = true;
     _reconnectAttempts = 0;
 
+    private readonly _localization: ILocalizationService;
+    private readonly _manager: IRustPlusManagerClient;
+
     constructor(
         guildId: string,
         logger: LoggerLike,
@@ -34,6 +33,8 @@ export default class RustPlusLite extends RustPlusLib {
         appPort: number,
         steamId: string,
         playerToken: string,
+        localizationService: ILocalizationService,
+        manager: IRustPlusManagerClient,
     ) {
         super(serverIp, appPort, steamId, playerToken, false, new LibLoggerAdapter(logger, 'RustPlus LITE'));
 
@@ -41,13 +42,16 @@ export default class RustPlusLite extends RustPlusLib {
         this.guildId = guildId;
         this.logger = logger;
         this.rustplus = rustplus;
+        this._localization = localizationService;
+        this._manager = manager;
 
         this.loadRustPlusLiteEvents();
     }
 
     loadRustPlusLiteEvents(): void {
-        for (const event of rustplusLiteEvents as RustplusEvent[]) {
-            this.on(event.name, (...args: unknown[]) => event.execute(this, getClient(), ...args));
+        const services = { localizationService: this._localization, manager: this._manager };
+        for (const event of rustplusLiteEvents as RustplusLiteEvent[]) {
+            this.on(event.name, (...args: unknown[]) => event.execute(this, services, ...args));
         }
     }
 
@@ -88,14 +92,13 @@ export default class RustPlusLite extends RustPlusLib {
     }
 
     isResponseValid(response: unknown): boolean {
-        const client = getClient();
         if (response === undefined) {
-            this.log(client.intlGet(null, 'errorCap'), client.intlGet(null, 'responseIsUndefined'), 'error');
+            this.log(this._localization.intlGet(null, 'errorCap'), this._localization.intlGet(null, 'responseIsUndefined'), 'error');
             return false;
         }
 
         if (response?.toString() === 'Error: Timeout reached while waiting for response') {
-            this.log(client.intlGet(null, 'errorCap'), client.intlGet(null, 'responseTimeout'), 'error');
+            this.log(this._localization.intlGet(null, 'errorCap'), this._localization.intlGet(null, 'responseTimeout'), 'error');
             return false;
         }
 
@@ -106,8 +109,8 @@ export default class RustPlusLite extends RustPlusLib {
             }
 
             this.log(
-                client.intlGet(null, 'errorCap'),
-                client.intlGet(null, 'responseContainError', {
+                this._localization.intlGet(null, 'errorCap'),
+                this._localization.intlGet(null, 'responseContainError', {
                     error: errorResponse.error,
                 }),
                 'error',

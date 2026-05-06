@@ -1,9 +1,9 @@
 import * as Constants from '../domain/constants.js';
-import type DiscordBot from '../structures/DiscordBot.js';
+import type { ILocalizationService } from '../interfaces/ILocalizationService.js';
 
 export async function inGameChatHandler(
     rustplus: any,
-    client: DiscordBot,
+    client: ILocalizationService,
     message: string | string[] | null = null,
 ): Promise<void> {
     const guildId = rustplus.guildId;

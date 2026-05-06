@@ -208,9 +208,11 @@ export default {
                             const orderCurrencyIsBlueprint = order.currencyIsBlueprint;
 
                             const orderItemName =
-                                orderItemId !== null ? client.items.getName(orderItemId) : unknownString;
+                                orderItemId !== null ? client.items.getName(orderItemId.toString()) : unknownString;
                             const orderCurrencyName =
-                                orderCurrencyId !== null ? client.items.getName(orderCurrencyId) : unknownString;
+                                orderCurrencyId !== null
+                                    ? client.items.getName(orderCurrencyId.toString())
+                                    : unknownString;
 
                             const prevFoundLines = foundLines;
 

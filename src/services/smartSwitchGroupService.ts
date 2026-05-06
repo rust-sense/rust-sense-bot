@@ -1,12 +1,12 @@
 import * as DiscordMessages from '../discordTools/discordMessages.js';
 import * as Timer from '../domain/timer.js';
 import { getPersistenceService } from '../persistence/index.js';
-import type DiscordBot from '../structures/DiscordBot.js';
+import type { ILocalizationService } from '../interfaces/ILocalizationService.js';
 
-export function syncSmartSwitchGroups(rustplus: any, client: DiscordBot) {}
+export function syncSmartSwitchGroups(rustplus: any, client: ILocalizationService) {}
 
 export async function updateSwitchGroupIfContainSwitch(
-    client: DiscordBot,
+    client: ILocalizationService,
     guildId: string,
     serverId: string,
     switchId: string,
@@ -23,7 +23,7 @@ export async function updateSwitchGroupIfContainSwitch(
 }
 
 export async function getGroupsFromSwitchList(
-    client: DiscordBot,
+    client: ILocalizationService,
     guildId: string,
     serverId: string,
     switches: string[],
@@ -45,7 +45,7 @@ export async function getGroupsFromSwitchList(
 }
 
 export async function TurnOnOffGroup(
-    client: DiscordBot,
+    client: ILocalizationService,
     rustplus: any,
     guildId: string,
     serverId: string,
@@ -105,7 +105,7 @@ export async function TurnOnOffGroup(
     }
 }
 
-export async function smartSwitchGroupCommandHandler(rustplus: any, client: DiscordBot, command: string) {
+export async function smartSwitchGroupCommandHandler(rustplus: any, client: ILocalizationService, command: string) {
     const guildId = rustplus.guildId;
     const serverId = rustplus.serverId;
     const instance = await getPersistenceService().readGuildState(guildId);

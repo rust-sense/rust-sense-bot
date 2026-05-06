@@ -1,15 +1,21 @@
 import * as DiscordMessages from '../discordTools/discordMessages.js';
 import { getPersistenceService } from '../persistence/index.js';
 import * as PollingHandlerModule from '../services/pollingService.js';
+import type RustPlus from '../structures/RustPlus.js';
+import type { RustPlusEventServices } from '../types/rustplusEvents.js';
+import { resolve } from '../container.js';
 
 const PollingHandler = PollingHandlerModule;
 
 export default {
     name: 'connected',
-    async execute(rustplus: any, client: any) {
+    async execute(rustplus: RustPlus, services: RustPlusEventServices) {
         if (!rustplus.isServerAvailable()) return rustplus.deleteThisRustplusInstance();
 
-        rustplus.log(client.intlGet(null, 'connectedCap'), client.intlGet(null, 'connectedToServer'));
+        rustplus.log(
+            services.localizationService.intlGet(null, 'connectedCap'),
+            services.localizationService.intlGet(null, 'connectedToServer'),
+        );
 
         const instance = await getPersistenceService().readGuildState(rustplus.guildId);
         const guildId = rustplus.guildId;
@@ -24,8 +30,8 @@ export default {
         const map = await rustplus.getMapAsync(3 * 60 * 1000); /* 3 min timeout */
         if (!rustplus.isResponseValid(map)) {
             rustplus.log(
-                client.intlGet(null, 'errorCap'),
-                client.intlGet(null, 'somethingWrongWithConnection'),
+                services.localizationService.intlGet(null, 'errorCap'),
+                services.localizationService.intlGet(null, 'somethingWrongWithConnection'),
                 'error',
             );
 
@@ -35,13 +41,16 @@ export default {
             await DiscordMessages.sendServerConnectionInvalidMessage(guildId, serverId);
             await DiscordMessages.sendServerMessage(guildId, serverId, null);
 
-            client.resetRustplusVariables(guildId);
+            services.manager.resetRustplusVariables(guildId);
 
             rustplus.disconnect();
-            delete client.rustplusInstances[guildId];
+            delete services.manager.rustplusInstances[guildId];
             return;
         }
-        rustplus.log(client.intlGet(null, 'connectedCap'), client.intlGet(null, 'rustplusOperational'));
+        rustplus.log(
+            services.localizationService.intlGet(null, 'connectedCap'),
+            services.localizationService.intlGet(null, 'rustplusOperational'),
+        );
 
         const info = await rustplus.getInfoAsync();
         if (rustplus.isResponseValid(info) && info.info) {
@@ -50,8 +59,8 @@ export default {
         }
 
         const { default: GameMap } = await import('../structures/GameMap.js');
-        if (Object.hasOwn(client.rustplusMaps, guildId)) {
-            if (client.isJpgImageChanged(guildId, map.map)) {
+        if (Object.hasOwn(services.manager.rustplusMaps, guildId)) {
+            if (services.manager.isJpgImageChanged(guildId, map.map)) {
                 rustplus.map = new GameMap(map.map, rustplus);
 
                 await rustplus.map.writeMap(false, true);
@@ -70,13 +79,13 @@ export default {
             await DiscordMessages.sendInformationMapMessage(guildId);
         }
 
-        if (client.rustplusReconnecting[guildId]) {
-            client.rustplusReconnecting[guildId] = false;
+        if (services.manager.rustplusReconnecting[guildId]) {
+            services.manager.rustplusReconnecting[guildId] = false;
             rustplus._reconnectAttempts = 0;
 
-            if (client.rustplusReconnectTimers[guildId]) {
-                clearTimeout(client.rustplusReconnectTimers[guildId]);
-                client.rustplusReconnectTimers[guildId] = null;
+            if (services.manager.rustplusReconnectTimers[guildId]) {
+                clearTimeout(services.manager.rustplusReconnectTimers[guildId]);
+                services.manager.rustplusReconnectTimers[guildId] = null;
             }
 
             await DiscordMessages.sendServerChangeStateMessage(guildId, serverId, 0);
@@ -84,22 +93,23 @@ export default {
 
         await DiscordMessages.sendServerMessage(guildId, serverId, null);
 
-        /* Setup Smart Devices */
-        await (await import('../discordTools/SetupSwitches.js')).default(client, rustplus);
-        await (await import('../discordTools/SetupSwitchGroups.js')).default(client, rustplus);
-        await (await import('../discordTools/SetupAlarms.js')).default(client, rustplus);
-        await (await import('../discordTools/SetupStorageMonitors.js')).default(client, rustplus);
+        /* Setup Smart Devices — these still need the full DiscordBot (Phase 6) */
+        const discordBot = resolve('discordBot');
+        await (await import('../discordTools/SetupSwitches.js')).default(discordBot, rustplus);
+        await (await import('../discordTools/SetupSwitchGroups.js')).default(discordBot, rustplus);
+        await (await import('../discordTools/SetupAlarms.js')).default(discordBot, rustplus);
+        await (await import('../discordTools/SetupStorageMonitors.js')).default(discordBot, rustplus);
         rustplus.isNewConnection = false;
         rustplus.loadMarkers();
 
-        await PollingHandler.pollRustPlusState(rustplus, client);
+        await PollingHandler.pollRustPlusState(rustplus, discordBot);
         rustplus.restorePersistentRuntimeState();
         rustplus.persistMapMarkersRuntimeState();
         rustplus.pollingTaskId = setInterval(
             PollingHandler.pollRustPlusState,
-            client.pollingIntervalMs,
+            services.manager.pollingIntervalMs,
             rustplus,
-            client,
+            discordBot,
         );
         rustplus.isOperational = true;
 

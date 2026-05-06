@@ -1,15 +1,15 @@
 import * as DiscordMessages from '../discordTools/discordMessages.js';
 import * as Constants from '../domain/constants.js';
+import type { ILocalizationService } from '../interfaces/ILocalizationService.js';
 import { getPersistenceService } from '../persistence/index.js';
-import type DiscordBot from '../structures/DiscordBot.js';
 import { getPlayerName } from '../utils/playerNameUtils.js';
 
-export async function processTeamUpdate(rustplus: any, client: DiscordBot, teamInfo: any): Promise<void> {
+export async function processTeamUpdate(rustplus: any, client: ILocalizationService, teamInfo: any): Promise<void> {
     /* Handle team changes */
     await checkChanges(rustplus, client, teamInfo);
 }
 
-export async function checkChanges(rustplus: any, client: DiscordBot, teamInfo: any): Promise<void> {
+export async function checkChanges(rustplus: any, client: ILocalizationService, teamInfo: any): Promise<void> {
     if (!teamInfo || !teamInfo.leaderSteamId || !Array.isArray(teamInfo.members)) return;
 
     const instance = await getPersistenceService().readGuildState(rustplus.guildId);

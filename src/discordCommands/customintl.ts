@@ -133,7 +133,7 @@ async function resetCustomIntl(client: DiscordBot, interaction: any, verifyId: s
     }
 
     delete guildInstance.customIntlMessages[messageKey];
-    delete client.customGuildIntl[guildId][messageKey];
+    client.removeCustomIntlKey(guildId, messageKey);
     await getPersistenceService().setCustomIntlMessage(guildId, messageKey, null);
 
     const str = client.intlGet(interaction.guildId, 'customIntlResetSuccess', {

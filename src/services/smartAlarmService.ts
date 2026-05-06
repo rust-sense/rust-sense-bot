@@ -1,9 +1,9 @@
 import * as DiscordMessages from '../discordTools/discordMessages.js';
 import * as Timer from '../domain/timer.js';
 import { getPersistenceService } from '../persistence/index.js';
-import type DiscordBot from '../structures/DiscordBot.js';
+import type { ILocalizationService } from '../interfaces/ILocalizationService.js';
 
-export async function syncSmartAlarms(rustplus: any, client: DiscordBot) {
+export async function syncSmartAlarms(rustplus: any, client: ILocalizationService) {
     let instance = await getPersistenceService().readGuildState(rustplus.guildId);
     const guildId = rustplus.guildId;
     const serverId = rustplus.serverId;
@@ -48,7 +48,7 @@ export async function syncSmartAlarms(rustplus: any, client: DiscordBot) {
     }
 }
 
-export async function smartAlarmCommandHandler(rustplus: any, client: DiscordBot, command: string) {
+export async function smartAlarmCommandHandler(rustplus: any, client: ILocalizationService, command: string) {
     const guildId = rustplus.guildId;
     const serverId = rustplus.serverId;
     const instance = await getPersistenceService().readGuildState(guildId);
