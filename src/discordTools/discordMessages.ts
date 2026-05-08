@@ -69,7 +69,7 @@ export async function sendServerMessage(guildId: string, serverId: string, state
 
     const message = await sendMessage(guildId, content, server.messageId, instance.channelId.servers, interaction);
 
-    if (!interaction) {
+    if (!interaction && message) {
         instance.serverList[serverId].messageId = message.id;
         client.setInstance(guildId, instance);
     }
@@ -86,7 +86,7 @@ export async function sendTrackerMessage(guildId: string, trackerId: string, int
 
     const message = await sendMessage(guildId, content, tracker.messageId, instance.channelId.trackers, interaction);
 
-    if (!interaction) {
+    if (!interaction && message) {
         instance.trackers[trackerId].messageId = message.id;
         client.setInstance(guildId, instance);
     }
@@ -116,7 +116,7 @@ export async function sendSmartSwitchMessage(
 
     const message = await sendMessage(guildId, content, entity.messageId, instance.channelId.switches, interaction);
 
-    if (!interaction) {
+    if (!interaction && message) {
         instance.serverList[serverId].switches[entityId].messageId = message.id;
         client.setInstance(guildId, instance);
     }
@@ -143,7 +143,7 @@ export async function sendSmartAlarmMessage(
 
     const message = await sendMessage(guildId, content, entity.messageId, instance.channelId.alarms, interaction);
 
-    if (!interaction) {
+    if (!interaction && message) {
         instance.serverList[serverId].alarms[entityId].messageId = message.id;
         client.setInstance(guildId, instance);
     }
@@ -182,7 +182,7 @@ export async function sendStorageMonitorMessage(
         interaction,
     );
 
-    if (!interaction) {
+    if (!interaction && message) {
         instance.serverList[serverId].storageMonitors[entityId].messageId = message.id;
         client.setInstance(guildId, instance);
     }
@@ -205,7 +205,7 @@ export async function sendSmartSwitchGroupMessage(
 
     const message = await sendMessage(guildId, content, group.messageId, instance.channelId.switchGroups, interaction);
 
-    if (!interaction) {
+    if (!interaction && message) {
         instance.serverList[serverId].switchGroups[groupId].messageId = message.id;
         client.setInstance(guildId, instance);
     }
@@ -453,7 +453,7 @@ export async function sendUpdateMapInformationMessage(rustplus: any) {
         instance.channelId.information,
     );
 
-    if (message.id !== instance.informationMessageId.map) {
+    if (message && message.id !== instance.informationMessageId.map) {
         instance.informationMessageId.map = message.id;
         client.setInstance(rustplus.guildId, instance);
     }
@@ -474,7 +474,7 @@ export async function sendUpdateServerInformationMessage(rustplus: any) {
         instance.channelId.information,
     );
 
-    if (message.id !== instance.informationMessageId.server) {
+    if (message && message.id !== instance.informationMessageId.server) {
         instance.informationMessageId.server = message.id;
         client.setInstance(rustplus.guildId, instance);
     }
@@ -495,7 +495,7 @@ export async function sendUpdateEventInformationMessage(rustplus: any) {
         instance.channelId.information,
     );
 
-    if (message.id !== instance.informationMessageId.event) {
+    if (message && message.id !== instance.informationMessageId.event) {
         instance.informationMessageId.event = message.id;
         client.setInstance(rustplus.guildId, instance);
     }
@@ -516,7 +516,7 @@ export async function sendUpdateTeamInformationMessage(rustplus: any) {
         instance.channelId.information,
     );
 
-    if (message.id !== instance.informationMessageId.team) {
+    if (message && message.id !== instance.informationMessageId.team) {
         instance.informationMessageId.team = message.id;
         client.setInstance(rustplus.guildId, instance);
     }
@@ -536,7 +536,7 @@ export async function sendUpdateBattlemetricsOnlinePlayersInformationMessage(rus
         instance.channelId.information,
     );
 
-    if (message.id !== instance.informationMessageId.battlemetricsPlayers) {
+    if (message && message.id !== instance.informationMessageId.battlemetricsPlayers) {
         instance.informationMessageId.battlemetricsPlayers = message.id;
         client.setInstance(rustplus.guildId, instance);
     }
