@@ -4,9 +4,6 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-overrides:
-  jpeg-js: 0.4.4
-
 importers:
 
   .:
@@ -31,7 +28,7 @@ importers:
         version: 13.0.3
       axios:
         specifier: ^1.15.2
-        version: 1.15.2
+        version: 1.15.2(debug@4.4.3)
       colors:
         specifier: ^1.4.0
         version: 1.4.0
@@ -89,7 +86,7 @@ importers:
         version: 1.25.4
       '@types/lodash':
         specifier: ^4.17.16
-        version: 4.17.24
+        version: 4.17.25
       '@types/node':
         specifier: ^24.0.0
         version: 24.12.2
@@ -709,8 +706,8 @@ packages:
   '@types/gm@1.25.4':
     resolution: {integrity: sha512-123Spjn7f0eZZOiFlXCiloBRga+uczwAdZOlcgtva+I1h137ADcbC7I5B3SZToQBzYLMokYDlyPxRUozKSQ+Ow==}
 
-  '@types/lodash@4.17.24':
-    resolution: {integrity: sha512-gIW7lQLZbue7lRSWEFql49QJJWThrTFFeIMJdp3eH4tKoxm1OvEPg02rm4wCCSHS0cL3/Fizimb35b7k8atwsQ==}
+  '@types/lodash@4.17.25':
+    resolution: {integrity: sha512-+K1NIO8I+F9/wNulfVvu23QYd0Pe9/OCqRrim4NoYIf1VoEDL90Ve4ClzpyqBLc7NpGGWRvYNCKZ1BE/Jpf8dQ==}
 
   '@types/node@10.17.60':
     resolution: {integrity: sha512-F0KIgDJfy2nA3zMLmWGKxcH2ZVEtCZXHHdOQs2gSaQ27+lNeEfGxzkIw90aXswATX7AZ33tahPbzy6KAfUreVw==}
@@ -2235,7 +2232,7 @@ snapshots:
     dependencies:
       '@types/node': 24.12.2
 
-  '@types/lodash@4.17.24': {}
+  '@types/lodash@4.17.25': {}
 
   '@types/node@10.17.60': {}
 
@@ -2299,9 +2296,9 @@ snapshots:
     dependencies:
       fast-glob: 3.3.3
 
-  axios@1.15.2:
+  axios@1.15.2(debug@4.4.3):
     dependencies:
-      follow-redirects: 1.16.0
+      follow-redirects: 1.16.0(debug@4.4.3)
       form-data: 4.0.5
       proxy-from-env: 2.1.0
     transitivePeerDependencies:
@@ -2582,7 +2579,9 @@ snapshots:
 
   fn.name@1.1.0: {}
 
-  follow-redirects@1.16.0: {}
+  follow-redirects@1.16.0(debug@4.4.3):
+    optionalDependencies:
+      debug: 4.4.3
 
   form-data@4.0.5:
     dependencies:
