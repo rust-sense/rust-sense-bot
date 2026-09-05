@@ -4,9 +4,6 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-overrides:
-  jpeg-js: 0.4.4
-
 importers:
 
   .:
@@ -28,10 +25,10 @@ importers:
         version: 4.1.8
       awilix:
         specifier: ^13.0.3
-        version: 13.0.3
+        version: 13.0.5
       axios:
         specifier: ^1.15.2
-        version: 1.15.2
+        version: 1.15.2(debug@4.4.3)
       colors:
         specifier: ^1.4.0
         version: 1.4.0
@@ -778,8 +775,8 @@ packages:
     resolution: {integrity: sha512-zJAaP9zxTcvTHRlejau3ZOY4V7SRpiByf3/dxx2uyKxxor19tpmpV2QRsTKikckwhaPmr2dVpxxMr7jOCYVp5g==}
     engines: {node: '>=6.0.0'}
 
-  awilix@13.0.3:
-    resolution: {integrity: sha512-WpgYKwf8XEPAxabPxBYGvxz1QZhyxoopQLLqpwwVqSQAvTO46yhld3M9nfMuV8t2FjsTO7DQblALD9w+C8iVKQ==}
+  awilix@13.0.5:
+    resolution: {integrity: sha512-ORtca6suBdYA1FyTzqHEZDvEuUwo3lPDDBRm7GrzHgi6STESzJKdBtpqfTzObdMj1NGQUWX6k26E3EbQaGJX5Q==}
     engines: {node: '>=20.0.0'}
 
   axios@1.15.2:
@@ -2295,13 +2292,13 @@ snapshots:
 
   await-to-js@3.0.0: {}
 
-  awilix@13.0.3:
+  awilix@13.0.5:
     dependencies:
       fast-glob: 3.3.3
 
-  axios@1.15.2:
+  axios@1.15.2(debug@4.4.3):
     dependencies:
-      follow-redirects: 1.16.0
+      follow-redirects: 1.16.0(debug@4.4.3)
       form-data: 4.0.5
       proxy-from-env: 2.1.0
     transitivePeerDependencies:
@@ -2582,7 +2579,9 @@ snapshots:
 
   fn.name@1.1.0: {}
 
-  follow-redirects@1.16.0: {}
+  follow-redirects@1.16.0(debug@4.4.3):
+    optionalDependencies:
+      debug: 4.4.3
 
   form-data@4.0.5:
     dependencies:
